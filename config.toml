@@ -1,0 +1,30 @@
+root_domain = "chiiiirs.com"
+tailscale_admin_email = "admin@chiiiirs.com"
+
+[authentik]
+subdomain = "auth"
+image_version = "2026.2"
+bootstrap_email = "chpatton013@gmail.com"
+
+[authentik.db]
+name = "authentik"
+username = "authentik"
+instance_type = "t4g.small"
+allocated_storage_gib = 20
+
+[authentik.server]
+cpu = 1024
+memory_limit_mib = 2048
+desired_count = 1
+
+[authentik.worker]
+cpu = 1024
+memory_limit_mib = 2048
+desired_count = 1
+
+[authentik.smtp]
+host = "smtp.chiiiirs.com"
+port = 587
+use_tls = true
+from_email_address = "authentik@chiiiirs.com"
+

@@ -2,7 +2,7 @@
   "app": "python3 app.py",
   "watch": {
     "include": [
-      "**"
+      "infra/**"
     ],
     "exclude": [
       "README.md",
