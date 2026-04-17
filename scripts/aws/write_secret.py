@@ -10,7 +10,7 @@ def read_input(path: str) -> str:
     if path == "-":
         data = sys.stdin.read()
     else:
-        with open(path, "r") as f:
+        with open(path) as f:
             data = f.read()
     return data.rstrip("\r\n")
 

@@ -7,6 +7,39 @@ include_files = ["**/*.py"]
 [validator.python-shadow-import]
 include_files = ["**/*.py"]
 
+[validator.pyupgrade]
+include_files = ["**/*.py"]
+
+[validator.rustfmt]
+include_files = ["**/*.rs"]
+
+[validator.shellcheck]
+include_files = [
+    "**/*.bash",
+    "**/*.sh",
+    "bin/aws-create-hosted-zone",
+    "bin/aws-write-secret",
+    "bin/bootstrap",
+    "bin/pre-commit",
+    "bin/test",
+    "bin/validate",
+]
+
+[validator.shfmt]
+include_files = [
+    "**/*.bash",
+    "**/*.sh",
+    "bin/aws-create-hosted-zone",
+    "bin/aws-write-secret",
+    "bin/bootstrap",
+    "bin/pre-commit",
+    "bin/test",
+    "bin/validate",
+]
+
+[validator.terraform-fmt]
+include_files = ["**/*.tf", "**/*.tfvars"]
+
 [validator.case-conflict]
 include_files = ["**"]
 

@@ -124,15 +124,10 @@ nested `.validator.toml` files can narrow or extend that config.
 
 ## Validators
 
-- pyupgrade
-- shellcheck
 - xml (xml.etree.cElementTree.parse)
 
-- shfmt
-- rustfmt
 - toml
 - yaml
 - json
-- terraform (terraform fmt)
 
 - gitleaks

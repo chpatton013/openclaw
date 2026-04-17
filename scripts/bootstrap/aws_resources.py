@@ -34,7 +34,7 @@ def resolve_arg(value: str | None) -> str | None:
     if value is None:
         return None
     if value.startswith("@"):
-        with open(value[1:], "r") as f:
+        with open(value[1:]) as f:
             return f.read().rstrip("\r\n")
     return value
 
