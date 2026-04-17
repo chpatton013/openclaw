@@ -51,6 +51,7 @@ def _resolve_files(args: list[str], repo_root: pathlib.Path) -> list[pathlib.Pat
 def main() -> int:
     parser = argparse.ArgumentParser(prog="validate")
     parser.add_argument("--fix", action="store_true")
+    parser.add_argument("--profile", action="store_true")
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--task-timeout", type=int, default=60)
     parser.add_argument(
@@ -74,6 +75,7 @@ def main() -> int:
         workers=args.workers,
         dirty=args.dirty,
         task_timeout=args.task_timeout,
+        profile=args.profile,
     )
 
 

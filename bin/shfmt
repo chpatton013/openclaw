@@ -1,0 +1,51 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "shfmt",
+  "platforms": {
+    "macos-aarch64": {
+      "size": 2975650,
+      "hash": "blake3",
+      "digest": "b205ddbbbae9aeed80f89f12b9d4c200a47bcafe8d9c3e56e8ef1f8a2a1af31e",
+      "path": "shfmt",
+      "providers": [
+        {
+          "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_darwin_arm64"
+        }
+      ]
+    },
+    "macos-x86_64": {
+      "size": 3124544,
+      "hash": "blake3",
+      "digest": "e397709bd38358a3d1a5c0c336cf3bf0088c3d27b8636b393f470b083f54005b",
+      "path": "shfmt",
+      "providers": [
+        {
+          "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_darwin_amd64"
+        }
+      ]
+    },
+    "linux-aarch64": {
+      "size": 3014818,
+      "hash": "blake3",
+      "digest": "a420d2abc7599f358f59c64dd8fc45b83739f9771610ce9df7febb8c6db416d3",
+      "path": "shfmt",
+      "providers": [
+        {
+          "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_arm64"
+        }
+      ]
+    },
+    "linux-x86_64": {
+      "size": 3117218,
+      "hash": "blake3",
+      "digest": "1604fdcc6ff12355ff08004de88ab083b7e61a48517555d06b5cbd0d5b63fff2",
+      "path": "shfmt",
+      "providers": [
+        {
+          "url": "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_amd64"
+        }
+      ]
+    }
+  }
+}

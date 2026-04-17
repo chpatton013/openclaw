@@ -1,0 +1,55 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "terraform",
+  "platforms": {
+    "macos-aarch64": {
+      "size": 25745690,
+      "hash": "blake3",
+      "digest": "f87a6eec0bd091975df5ae47b13579e75d20bd1230874649ee1041a57bce03b2",
+      "format": "zip",
+      "path": "terraform",
+      "providers": [
+        {
+          "url": "https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_darwin_arm64.zip"
+        }
+      ]
+    },
+    "macos-x86_64": {
+      "size": 27959329,
+      "hash": "blake3",
+      "digest": "6a237ac0d54cd63ab0bc28585522536a0bea23b03e02563911a4fc6ce77b37f3",
+      "format": "zip",
+      "path": "terraform",
+      "providers": [
+        {
+          "url": "https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_darwin_amd64.zip"
+        }
+      ]
+    },
+    "linux-aarch64": {
+      "size": 24727458,
+      "hash": "blake3",
+      "digest": "f6e868aa2524cb4c0db08859a9d096b9324af9a8d1cdbfaedcd8ce50c3eb4b29",
+      "format": "zip",
+      "path": "terraform",
+      "providers": [
+        {
+          "url": "https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_arm64.zip"
+        }
+      ]
+    },
+    "linux-x86_64": {
+      "size": 27041434,
+      "hash": "blake3",
+      "digest": "dc0bb1be802b8026f471a597f9dc993492a948a018c577e3c60a08e9d51991bb",
+      "format": "zip",
+      "path": "terraform",
+      "providers": [
+        {
+          "url": "https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip"
+        }
+      ]
+    }
+  }
+}

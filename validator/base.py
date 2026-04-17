@@ -9,6 +9,7 @@ class ValidationResult:
     ok: bool
     file: pathlib.Path | None = None
     runtime_s: float = 0.0
+    cpu_s: float = 0.0
     messages: tuple[str, ...] = ()
     fixed: bool = False
 

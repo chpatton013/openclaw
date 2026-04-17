@@ -1,0 +1,55 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "uv",
+  "platforms": {
+    "macos-aarch64": {
+      "size": 20839135,
+      "hash": "blake3",
+      "digest": "fe05177d55ebc6455da370ac23ee9663ee970de73ea933b0f14d0668a5f7cadf",
+      "format": "tar.gz",
+      "path": "uv-aarch64-apple-darwin/uv",
+      "providers": [
+        {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-apple-darwin.tar.gz"
+        }
+      ]
+    },
+    "macos-x86_64": {
+      "size": 22522163,
+      "hash": "blake3",
+      "digest": "4546d4b7f2d94cb3f83e2dee83a3c35977d6d7a7911e0c906b86adf9e3f2c805",
+      "format": "tar.gz",
+      "path": "uv-x86_64-apple-darwin/uv",
+      "providers": [
+        {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-apple-darwin.tar.gz"
+        }
+      ]
+    },
+    "linux-aarch64": {
+      "size": 22630974,
+      "hash": "blake3",
+      "digest": "c247dd588b0c8fbf8a59fe1b526fc2a0171e8c902edae68ee649d530247a0233",
+      "format": "tar.gz",
+      "path": "uv-aarch64-unknown-linux-musl/uv",
+      "providers": [
+        {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.11.7/uv-aarch64-unknown-linux-musl.tar.gz"
+        }
+      ]
+    },
+    "linux-x86_64": {
+      "size": 24417458,
+      "hash": "blake3",
+      "digest": "08117be24ab3e9afdc3ef4cd4667f5b0c6d619566be5336dacefd4b533b5fac6",
+      "format": "tar.gz",
+      "path": "uv-x86_64-unknown-linux-musl/uv",
+      "providers": [
+        {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.11.7/uv-x86_64-unknown-linux-musl.tar.gz"
+        }
+      ]
+    }
+  }
+}

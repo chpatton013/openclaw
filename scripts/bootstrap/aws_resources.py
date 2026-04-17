@@ -6,8 +6,20 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
+
+def find_repo_root(start: pathlib.Path) -> pathlib.Path:
+    output = subprocess.run(
+        ["git", "-C", start, "rev-parse", "--show-toplevel"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    return pathlib.Path(output.stdout.strip())
+
+
 HERE = pathlib.Path(__file__).parent
-REPO_ROOT = HERE.parent
+REPO_ROOT = find_repo_root(HERE)
 BIN_DIR = REPO_ROOT / "bin"
 CONFIG_PATH = REPO_ROOT / "config.toml"
 CREATE_HOSTED_ZONE = BIN_DIR / "aws-create-hosted-zone"

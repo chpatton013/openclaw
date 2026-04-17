@@ -4,6 +4,9 @@ include_files = ["**/*.py"]
 [validator.python-filename]
 include_files = ["**/*.py"]
 
+[validator.python-shadow-import]
+include_files = ["**/*.py"]
+
 [validator.case-conflict]
 include_files = ["**"]
 
@@ -19,12 +22,19 @@ include_files = ["**"]
 [validator.executable-extension]
 include_files = ["**"]
 
+[validator.file-size]
+include_files = ["**"]
+
 [validator.symlink]
 include_files = ["**"]
 
+[validator.tabs]
+include_files = ["**"]
+exclude_files = ["**/Makefile", "**/*.make"]
+
 [validator.unicode]
 include_files = ["**"]
-exclude_files = ["**/Makefile", "**/*.make", "**/*.md"]
+exclude_files = ["**/*.md"]
 
 [validator.trailing-newline]
 include_files = ["**"]

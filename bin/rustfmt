@@ -1,0 +1,31 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "rustfmt",
+  "platforms": {
+    "macos-x86_64": {
+      "size": 5212389,
+      "hash": "blake3",
+      "digest": "940d8aed6d387fb4fcf7d4efc4a969acd3ec8d8c249a0b7d646b191e2cd850fd",
+      "format": "tar.gz",
+      "path": "rustfmt_macos-x86_64_v1.6.0/rustfmt",
+      "providers": [
+        {
+          "url": "https://github.com/rust-lang/rustfmt/releases/download/v1.6.0/rustfmt_macos-x86_64_v1.6.0.tar.gz"
+        }
+      ]
+    },
+    "linux-x86_64": {
+      "size": 7457209,
+      "hash": "blake3",
+      "digest": "74f77659c913f9822abf3b9bae6cb828c8477869253c22560dd9914ec18770fb",
+      "format": "tar.gz",
+      "path": "rustfmt_linux-x86_64_v1.6.0/rustfmt",
+      "providers": [
+        {
+          "url": "https://github.com/rust-lang/rustfmt/releases/download/v1.6.0/rustfmt_linux-x86_64_v1.6.0.tar.gz"
+        }
+      ]
+    }
+  }
+}

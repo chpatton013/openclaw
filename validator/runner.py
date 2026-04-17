@@ -62,18 +62,22 @@ def _build_tasks(
 def _run_check(task: Task, repo_root: pathlib.Path, timeout: int) -> ValidationResult:
     if _CANCEL.is_set():
         return ValidationResult(ok=False, file=task.file, messages=("cancelled",))
-    start = time.perf_counter()
+    t0, c0 = time.perf_counter(), time.thread_time()
     try:
         res = task.validator.check(repo_root / task.file)
     except subprocess.TimeoutExpired:
         return ValidationResult(
             ok=False,
             file=task.file,
-            runtime_s=time.perf_counter() - start,
+            runtime_s=time.perf_counter() - t0,
+            cpu_s=time.thread_time() - c0,
             messages=(f"timeout after {timeout}s",),
         )
     return dataclasses.replace(
-        res, file=task.file, runtime_s=time.perf_counter() - start
+        res,
+        file=task.file,
+        runtime_s=time.perf_counter() - t0,
+        cpu_s=time.thread_time() - c0,
     )
 
 
@@ -90,17 +94,21 @@ def _run_fix_chain(
                 )
             )
             continue
-        start = time.perf_counter()
+        t0, c0 = time.perf_counter(), time.thread_time()
         try:
             res = task.validator.fix(repo_root / task.file)
             res = dataclasses.replace(
-                res, file=task.file, runtime_s=time.perf_counter() - start
+                res,
+                file=task.file,
+                runtime_s=time.perf_counter() - t0,
+                cpu_s=time.thread_time() - c0,
             )
         except subprocess.TimeoutExpired:
             res = ValidationResult(
                 ok=False,
                 file=task.file,
-                runtime_s=time.perf_counter() - start,
+                runtime_s=time.perf_counter() - t0,
+                cpu_s=time.thread_time() - c0,
                 messages=(f"timeout after {timeout}s",),
             )
         results.append((task, res))
@@ -129,6 +137,23 @@ def _all_tracked_files(repo_root: pathlib.Path) -> list[pathlib.Path]:
     return [repo_root / p for p in r.stdout.split("\0") if p]
 
 
+def _print_profile(results: list[tuple[Task, ValidationResult]]) -> None:
+    stats: dict[str, list[float]] = {}
+    for task, res in results:
+        stats.setdefault(task.validator_name, []).append(res.cpu_s)
+    rows = sorted(stats.items(), key=lambda x: -sum(x[1]))
+    name_w = max(len(name) for name, _ in rows)
+    print("\n=== Profile (CPU time) ===", file=sys.stderr)
+    for name, times in rows:
+        total = sum(times)
+        count = len(times)
+        print(
+            f"  {name:{name_w}}  {total:8.4f}s  {count:5d} calls"
+            f"  {total / count:.6f}s avg",
+            file=sys.stderr,
+        )
+
+
 def run(
     files: list[pathlib.Path] | None = None,
     *,
@@ -137,6 +162,7 @@ def run(
     workers: int | None = None,
     dirty: bool = False,
     task_timeout: int = 60,
+    profile: bool = False,
 ) -> int:
     _CANCEL.clear()
     _install_cancel_handler()
@@ -159,6 +185,9 @@ def run(
         workers = min(32, (os.cpu_count() or 1) + 4)
 
     failures: list[tuple[Task, ValidationResult]] = []
+    profile_results: list[tuple[Task, ValidationResult]] | None = (
+        [] if profile else None
+    )
 
     all_tasks = _build_tasks(
         files, repo_root=repo_root, validators=validators, tomls=tomls
@@ -182,6 +211,8 @@ def run(
                 }
                 for fut in as_completed(futs):
                     for task, res in fut.result():
+                        if profile_results is not None:
+                            profile_results.append((task, res))
                         if not res.ok:
                             failures.append((task, res))
     else:
@@ -196,6 +227,8 @@ def run(
             for fut in as_completed(futs):
                 task = futs[fut]
                 res = fut.result()
+                if profile_results is not None:
+                    profile_results.append((task, res))
                 if not res.ok:
                     failures.append((task, res))
 
@@ -206,5 +239,8 @@ def run(
             sys.stderr.write(msg)
             if not msg.endswith("\n"):
                 sys.stderr.write("\n")
+
+    if profile_results:
+        _print_profile(profile_results)
 
     return 1 if failures else 0

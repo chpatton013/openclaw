@@ -42,12 +42,7 @@ DIRECT_REPLACEMENTS: dict[str, str] = {
 def _check_bytes(data: bytes) -> ValidationResult:
     messages = []
     for lineno, line in enumerate(data.splitlines(), 1):
-        tab_cols = [col for col, b in enumerate(line, 1) if b == 0x09]
         uni_cols = [col for col, b in enumerate(line, 1) if b > 0x7F]
-        if tab_cols:
-            messages.append(
-                f"line {lineno}: tab at col {', '.join(str(c) for c in tab_cols)}"
-            )
         if uni_cols:
             messages.append(
                 f"line {lineno}: non-ASCII byte at col {', '.join(str(c) for c in uni_cols)}"
