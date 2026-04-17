@@ -1,6 +1,5 @@
 from aws_cdk import aws_ec2 as ec2
 
-
 INSTANCE_TYPES = {
     "t4g.micro": ec2.InstanceType.of(
         ec2.InstanceClass.BURSTABLE4_GRAVITON,

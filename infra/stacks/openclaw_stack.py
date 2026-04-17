@@ -15,7 +15,6 @@ from aws_cdk import (
 )
 from constructs import Construct
 
-
 EFS_MOUNTPOINT_DIR = pathlib.Path("/data")
 OPENCLAW_ROOT_DIR = EFS_MOUNTPOINT_DIR / "openclaw"
 OPENCLAW_HOME_DIR = OPENCLAW_ROOT_DIR / "home"
@@ -26,7 +25,9 @@ NODESOURCE_REPO_URI = "https://deb.nodesource.com/node_24.x"
 NODESOURCE_KEY_PATH = pathlib.Path("/etc/apt/keyrings/nodesource.gpg")
 NODESOURCE_REPO_PATH = pathlib.Path("/etc/apt/sources.list.d/nodesource.list")
 EFS_UTILS_INSTALLER_URI = "https://amazon-efs-utils.aws.com/efs-utils-installer.sh"
-HOMEBREW_INSTALLER_URI = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+HOMEBREW_INSTALLER_URI = (
+    "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+)
 PNPM_INSTALLER_URI = "https://get.pnpm.io/install.sh"
 BUILD_DEPENDENCIES = [
     "build-essential",
@@ -56,7 +57,9 @@ class OpenClawStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        user_data_replace = parse_bool(self.node.try_get_context("userDataReplace") or "false")
+        user_data_replace = parse_bool(
+            self.node.try_get_context("userDataReplace") or "false"
+        )
 
         vpc = ec2.Vpc(
             self,
@@ -87,7 +90,9 @@ class OpenClawStack(Stack):
             allow_all_outbound=True,
             description="EFS security group",
         )
-        efs_sg.add_ingress_rule(instance_sg, ec2.Port.tcp(2049), "NFS from OpenClaw instance")
+        efs_sg.add_ingress_rule(
+            instance_sg, ec2.Port.tcp(2049), "NFS from OpenClaw instance"
+        )
 
         filesystem = efs.FileSystem(
             self,
@@ -111,21 +116,29 @@ class OpenClawStack(Stack):
         role = iam.Role(
             self,
             "InstanceRole",
-            assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
+            assumed_by=iam.ServicePrincipal(
+                "ec2.amazonaws.com"
+            ),  # pyright: ignore[reportArgumentType]
             managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonElasticFileSystemClientFullAccess"),
-                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore"),
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "AmazonElasticFileSystemClientFullAccess"
+                ),
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "AmazonSSMManagedInstanceCore"
+                ),
             ],
         )
         filesystem.grant_read_write(role)
-        efs_fstab = " ".join([
-            f"{filesystem.file_system_id}:/",
-            str(EFS_MOUNTPOINT_DIR),
-            "efs",
-            f"_netdev,tls,iam,accesspoint={access_point.access_point_id}",
-            "0",
-            "0",
-        ])
+        efs_fstab = " ".join(
+            [
+                f"{filesystem.file_system_id}:/",
+                str(EFS_MOUNTPOINT_DIR),
+                "efs",
+                f"_netdev,tls,iam,accesspoint={access_point.access_point_id}",
+                "0",
+                "0",
+            ]
+        )
 
         ubuntu_ami = ec2.MachineImage.from_ssm_parameter(
             "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
@@ -138,76 +151,75 @@ class OpenClawStack(Stack):
             "set -euxo pipefail",
             "trap 'echo USERDATA FAILED on line $LINENO' ERR",
             "export DEBIAN_FRONTEND=noninteractive",
-
             # Add nodesource apt repo.
             "install -d -m 0755 /etc/apt/keyrings",
             f"curl -fsSL {NODESOURCE_KEY_URI} | gpg --dearmor -o {NODESOURCE_KEY_PATH!s}",
-            f"echo \"deb [signed-by={NODESOURCE_KEY_PATH!s}] {NODESOURCE_REPO_URI} nodistro main\" >{NODESOURCE_REPO_PATH!s}",
-
+            f'echo "deb [signed-by={NODESOURCE_KEY_PATH!s}] {NODESOURCE_REPO_URI} nodistro main" >{NODESOURCE_REPO_PATH!s}',
             # Install build dependencies from apt repos.
             "apt-get update",
             f"apt-get install -y {' '.join(BUILD_DEPENDENCIES)}",
-
             # Enable service lingering for ubuntu user. This allows the openclaw
             # gateway service to run as a user service instead of a system
             # service.
             "loginctl enable-linger ubuntu",
-
             # Install EFS Utils from official installer.
             f"curl -fsSL {EFS_UTILS_INSTALLER_URI} | sh -s -- --install",
-
             # Set up EFS mount point.
             f"mkdir -p {EFS_MOUNTPOINT_DIR!s}",
-            f"echo \"{efs_fstab}\" >>/etc/fstab",
+            f'echo "{efs_fstab}" >>/etc/fstab',
             "mount -a",
             f"mountpoint -q {EFS_MOUNTPOINT_DIR!s}",
-
             # Install OpenClaw globally from npm.
             f"mkdir -p {OPENCLAW_HOME_DIR!s} {OPENCLAW_STATE_DIR!s} {OPENCLAW_WORKSPACES_DIR!s}",
             f"chown -R ubuntu:ubuntu {OPENCLAW_HOME_DIR!s} {OPENCLAW_STATE_DIR!s} {OPENCLAW_WORKSPACES_DIR!s}",
             "npm install -g openclaw@latest",
-            "\n".join([
-                "cat >/etc/profile.d/openclaw.sh <<'EOF'",
-                f"export OPENCLAW_HOME={OPENCLAW_HOME_DIR!s}",
-                f"export OPENCLAW_STATE_DIR={OPENCLAW_STATE_DIR!s}",
-                "EOF",
-            ]),
+            "\n".join(
+                [
+                    "cat >/etc/profile.d/openclaw.sh <<'EOF'",
+                    f"export OPENCLAW_HOME={OPENCLAW_HOME_DIR!s}",
+                    f"export OPENCLAW_STATE_DIR={OPENCLAW_STATE_DIR!s}",
+                    "EOF",
+                ]
+            ),
             "chmod 0644 /etc/profile.d/openclaw.sh",
-
             # Install Linux Homebrew as the ssm-user user from the official
             # installer.
             # NOTE: Homebrew installer refuses to run as root, but does need to
             # use sudo for root permissions. `brew shellenv` returns nothing for
             # root user, so it must be run as a non-privileged user.
             f"curl -fsSL {HOMEBREW_INSTALLER_URI} | sudo -iu ssm-user /bin/bash",
-            " ".join([
-                "sudo -u ssm-user /home/linuxbrew/.linuxbrew/bin/brew shellenv",
-                "| tee /etc/profile.d/homebrew.sh >/dev/null",
-            ]),
+            " ".join(
+                [
+                    "sudo -u ssm-user /home/linuxbrew/.linuxbrew/bin/brew shellenv",
+                    "| tee /etc/profile.d/homebrew.sh >/dev/null",
+                ]
+            ),
             "chmod 0644 /etc/profile.d/homebrew.sh",
-
             # Install pnpm for the ubuntu user from the official installer.
             f"curl -fsSL {PNPM_INSTALLER_URI} | sudo -iu ubuntu /bin/bash",
-
             # Configure openclaw onboarding.
             # NOTE: We both use `sudo -i` and set XDG_RUNTIME_DIR to allow
             # systemctl to enable user services without a reboot or login cycle.
-            " ".join([
-                "sudo -iu ubuntu XDG_RUNTIME_DIR=\"/run/user/$(id -u ubuntu)\"",
-                "openclaw onboard",
-                "--non-interactive --accept-risk",
-                "--mode local --tailscale serve",
-                "--install-daemon --gateway-auth token --gateway-bind loopback",
-                "--daemon-runtime node --node-manager pnpm",
-                f"--workspace {(OPENCLAW_WORKSPACES_DIR / "main")!s}",
-                "--auth-choice skip --skip-channels --skip-search --skip-skills",
-                "--json",
-            ]),
+            " ".join(
+                [
+                    'sudo -iu ubuntu XDG_RUNTIME_DIR="/run/user/$(id -u ubuntu)"',
+                    "openclaw onboard",
+                    "--non-interactive --accept-risk",
+                    "--mode local --tailscale serve",
+                    "--install-daemon --gateway-auth token --gateway-bind loopback",
+                    "--daemon-runtime node --node-manager pnpm",
+                    f"--workspace {(OPENCLAW_WORKSPACES_DIR / "main")!s}",
+                    "--auth-choice skip --skip-channels --skip-search --skip-skills",
+                    "--json",
+                ]
+            ),
             *(
-                " ".join([
-                    "sudo -iu ubuntu XDG_RUNTIME_DIR=\"/run/user/$(id -u ubuntu)\"",
-                    f"openclaw hooks enable {hook}",
-                ])
+                " ".join(
+                    [
+                        'sudo -iu ubuntu XDG_RUNTIME_DIR="/run/user/$(id -u ubuntu)"',
+                        f"openclaw hooks enable {hook}",
+                    ]
+                )
                 for hook in OPENCLAW_HOOKS
             ),
             # TODO: Enable after https://github.com/openclaw/openclaw/pull/63679 merges.
@@ -215,7 +227,6 @@ class OpenClawStack(Stack):
             #     "sudo -iu ubuntu XDG_RUNTIME_DIR=\"/run/user/$(id -u ubuntu)\"",
             #     "openclaw completion --install",
             # ]),
-
             "",
         )
 
@@ -225,7 +236,7 @@ class OpenClawStack(Stack):
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             security_group=instance_sg,
-            role=role,
+            role=role,  # pyright: ignore[reportArgumentType]
             instance_type=ec2.InstanceType("t3.small"),
             machine_image=ubuntu_ami,
             user_data=user_data,
@@ -260,7 +271,9 @@ class OpenClawStack(Stack):
         backup_plan.add_rule(
             backup.BackupPlanRule(
                 rule_name="weekly-4-weeks",
-                schedule_expression=events.Schedule.cron(minute="0", hour="6", week_day="SUN"),
+                schedule_expression=events.Schedule.cron(
+                    minute="0", hour="6", week_day="SUN"
+                ),
                 delete_after=Duration.days(28),
             )
         )
@@ -290,6 +303,6 @@ class OpenClawStack(Stack):
             value=(
                 f"aws ssm start-session --target {instance.instance_id} "
                 "--document-name AWS-StartPortForwardingSession "
-                "--parameters '{\"portNumber\":[\"18789\"],\"localPortNumber\":[\"18789\"]}'"
+                '--parameters \'{"portNumber":["18789"],"localPortNumber":["18789"]}\''
             ),
         )

@@ -32,7 +32,9 @@ class PrivateIsolatedDatabaseInstance(Construct):
             "Instance",
             credentials=rds.Credentials.from_secret(self.secret),
             vpc=vpc,
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED),
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
+            ),
             security_groups=[self.security_group],
-            **instance_kwargs
+            **instance_kwargs,
         )

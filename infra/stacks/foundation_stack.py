@@ -21,7 +21,9 @@ from ..models.foundation_exports import FoundationExports
 
 
 class FoundationStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, *, cfg: FoundationConfig, **kwargs) -> None:
+    def __init__(
+        self, scope: Construct, construct_id: str, *, cfg: FoundationConfig, **kwargs
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         zone = route53.HostedZone.from_lookup(
@@ -62,4 +64,3 @@ class FoundationStack(Stack):
             vpc=vpc,
             cluster=cluster,
         )
-

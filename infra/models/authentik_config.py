@@ -8,9 +8,9 @@ class AuthentikDbConfig:
     instance_type: str
     allocated_storage_gib: int
 
-    @staticmethod
-    def load(data: dict[str, Any]) -> Self:
-        return AuthentikDbConfig(
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> Self:
+        return cls(
             name=data["name"],
             instance_type=data["instance_type"],
             allocated_storage_gib=data["allocated_storage_gib"],
@@ -23,9 +23,9 @@ class AuthentikTaskConfig:
     memory_limit_mib: int
     desired_count: int
 
-    @staticmethod
-    def load(data: dict[str, Any]) -> Self:
-        return AuthentikTaskConfig(
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> Self:
+        return cls(
             cpu=data["cpu"],
             memory_limit_mib=data["memory_limit_mib"],
             desired_count=data["desired_count"],
@@ -40,9 +40,9 @@ class AuthentikSmtpConfig:
     use_tls: bool
     from_email_address: str
 
-    @staticmethod
-    def load(data: dict[str, Any]) -> Self:
-        return AuthentikSmtpConfig(
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> Self:
+        return cls(
             host=data["host"],
             port=data["port"],
             use_ssl=data["use_ssl"],
@@ -60,9 +60,9 @@ class AuthentikConfig:
     worker: AuthentikTaskConfig
     smtp: AuthentikSmtpConfig
 
-    @staticmethod
-    def load(data: dict[str, Any]) -> Self:
-        return AuthentikConfig(
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> Self:
+        return cls(
             subdomain=data["subdomain"],
             image_version=data["image_version"],
             db=AuthentikDbConfig.load(data["db"]),

@@ -20,7 +20,6 @@ from ..models.authentik_config import AuthentikConfig
 from ..models.foundation_exports import FoundationExports
 from ..models.instance_type import INSTANCE_TYPES
 
-
 AUTHENTIK_HTTP_PORT = 9000
 AUTHENTIK_DB_PORT = 5432
 PRIVATE_CIDRS = [
@@ -115,14 +114,24 @@ class AuthentikStack(Stack):
         }
 
         common_secrets = {
-            "AUTHENTIK_EMAIL__PASSWORD": ecs.Secret.from_secrets_manager(smtp_secret, "password"),
-            "AUTHENTIK_EMAIL__USERNAME": ecs.Secret.from_secrets_manager(smtp_secret, "username"),
-            "AUTHENTIK_POSTGRESQL__PASSWORD": ecs.Secret.from_secrets_manager(database_secret, "password"),
-            "AUTHENTIK_POSTGRESQL__USER": ecs.Secret.from_secrets_manager(database_secret, "username"),
+            "AUTHENTIK_EMAIL__PASSWORD": ecs.Secret.from_secrets_manager(
+                smtp_secret, "password"
+            ),
+            "AUTHENTIK_EMAIL__USERNAME": ecs.Secret.from_secrets_manager(
+                smtp_secret, "username"
+            ),
+            "AUTHENTIK_POSTGRESQL__PASSWORD": ecs.Secret.from_secrets_manager(
+                database_secret, "password"
+            ),
+            "AUTHENTIK_POSTGRESQL__USER": ecs.Secret.from_secrets_manager(
+                database_secret, "username"
+            ),
             "AUTHENTIK_SECRET_KEY": ecs.Secret.from_secrets_manager(secret_key),
         }
 
-        app_image = ecs.ContainerImage.from_registry(f"ghcr.io/goauthentik/server:{cfg.image_version}")
+        app_image = ecs.ContainerImage.from_registry(
+            f"ghcr.io/goauthentik/server:{cfg.image_version}"
+        )
         health_check_path = "/-/health/live/"
 
         server_service = PrivateEgressFargateService(
@@ -137,14 +146,21 @@ class AuthentikStack(Stack):
             container_kwargs=dict(
                 image=app_image,
                 port_mappings=[
-                    ecs.PortMapping(container_port=AUTHENTIK_HTTP_PORT, host_port=AUTHENTIK_HTTP_PORT),
+                    ecs.PortMapping(
+                        container_port=AUTHENTIK_HTTP_PORT,
+                        host_port=AUTHENTIK_HTTP_PORT,
+                    ),
                 ],
                 command=["server"],
                 environment=common_env,
                 secrets={
                     **common_secrets,
-                    "AUTHENTIK_BOOTSTRAP_EMAIL": ecs.Secret.from_secrets_manager(bootstrap_secret, "email"),
-                    "AUTHENTIK_BOOTSTRAP_PASSWORD": ecs.Secret.from_secrets_manager(bootstrap_secret, "password"),
+                    "AUTHENTIK_BOOTSTRAP_EMAIL": ecs.Secret.from_secrets_manager(
+                        bootstrap_secret, "email"
+                    ),
+                    "AUTHENTIK_BOOTSTRAP_PASSWORD": ecs.Secret.from_secrets_manager(
+                        bootstrap_secret, "password"
+                    ),
                 },
                 health_check=ecs.HealthCheck(
                     command=[
@@ -200,7 +216,12 @@ class AuthentikStack(Stack):
 
         # Give server and worker services full access to S3 bucket.
         bucket_access_policy_statement = iam.PolicyStatement(
-            actions=["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+            actions=[
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:ListBucket",
+            ],
             resources=[bucket.bucket_arn, f"{bucket.bucket_arn}/*"],
         )
         server_service.task_defn.add_to_task_role_policy(bucket_access_policy_statement)

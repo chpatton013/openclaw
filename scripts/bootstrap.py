@@ -6,7 +6,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-
 HERE = pathlib.Path(__file__).parent
 REPO_ROOT = HERE.parent
 CONFIG_PATH = REPO_ROOT / "config.toml"
@@ -67,25 +66,29 @@ def collect_inputs(args: argparse.Namespace, domain: str) -> Inputs:
     if args.authentik_secret_key is None:
         authentik_secret_key = prompt_password_or_default("Authentik secret key")
 
-    authentik_bootstrap_email = resolve_arg(args.authentik_bootstrap_email) or prompt_required(
-        "Authentik bootstrap email"
-    )
+    authentik_bootstrap_email = resolve_arg(
+        args.authentik_bootstrap_email
+    ) or prompt_required("Authentik bootstrap email")
 
     authentik_bootstrap_password = resolve_arg(args.authentik_bootstrap_password)
     if args.authentik_bootstrap_password is None:
-        authentik_bootstrap_password = prompt_password_or_default("Authentik bootstrap password")
+        authentik_bootstrap_password = prompt_password_or_default(
+            "Authentik bootstrap password"
+        )
 
-    authentik_database_username = resolve_arg(args.authentik_database_username) or prompt_required(
-        "Authentik database username", default="authentik"
-    )
+    authentik_database_username = resolve_arg(
+        args.authentik_database_username
+    ) or prompt_required("Authentik database username", default="authentik")
 
     authentik_database_password = resolve_arg(args.authentik_database_password)
     if args.authentik_database_password is None:
-        authentik_database_password = prompt_password_or_default("Authentik database password")
+        authentik_database_password = prompt_password_or_default(
+            "Authentik database password"
+        )
 
-    authentik_smtp_username = resolve_arg(args.authentik_smtp_username) or prompt_required(
-        "Authentik SMTP username", default="authentik"
-    )
+    authentik_smtp_username = resolve_arg(
+        args.authentik_smtp_username
+    ) or prompt_required("Authentik SMTP username", default="authentik")
 
     authentik_smtp_password = resolve_arg(args.authentik_smtp_password)
     if args.authentik_smtp_password is None:

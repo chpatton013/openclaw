@@ -6,8 +6,8 @@ from typing import Any, Self
 class FoundationConfig:
     root_domain: str
 
-    @staticmethod
-    def load(data: dict[str, Any]) -> Self:
-        return FoundationConfig(
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> Self:
+        return cls(
             root_domain=data["root_domain"],
         )

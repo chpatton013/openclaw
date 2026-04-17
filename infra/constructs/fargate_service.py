@@ -37,8 +37,10 @@ class PrivateEgressFargateService(Construct):
         )
         self.container = self.task_defn.add_container(
             "Container",
-            logging=ecs.LogDrivers.aws_logs(stream_prefix=stream_prefix, log_group=self.log_group),
-            **container_kwargs
+            logging=ecs.LogDrivers.aws_logs(
+                stream_prefix=stream_prefix, log_group=self.log_group
+            ),
+            **container_kwargs,
         )
         self.service = ecs.FargateService(
             self,
@@ -48,5 +50,7 @@ class PrivateEgressFargateService(Construct):
             desired_count=desired_count,
             assign_public_ip=False,
             security_groups=[self.security_group],
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
         )

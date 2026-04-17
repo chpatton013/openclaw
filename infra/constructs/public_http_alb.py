@@ -1,3 +1,5 @@
+from typing import cast
+
 from aws_cdk import (
     aws_certificatemanager as acm,
     aws_ec2 as ec2,
@@ -25,8 +27,12 @@ class PublicHttpAlb(Construct):
         self.security_group = ec2.SecurityGroup(
             self, "SecurityGroup", vpc=vpc, allow_all_outbound=True
         )
-        self.security_group.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "HTTPS")
-        self.security_group.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(80), "HTTP redirect")
+        self.security_group.add_ingress_rule(
+            ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "HTTPS"
+        )
+        self.security_group.add_ingress_rule(
+            ec2.Peer.any_ipv4(), ec2.Port.tcp(80), "HTTP redirect"
+        )
 
         self.alb = elbv2.ApplicationLoadBalancer(
             self,
@@ -53,7 +59,9 @@ class PublicHttpAlb(Construct):
         self.http_listener = self.alb.add_listener("HttpListener", port=80, open=True)
         self.http_listener.add_action(
             "RedirectToHttps",
-            action=elbv2.ListenerAction.redirect(protocol="HTTPS", port="443", permanent=True),
+            action=elbv2.ListenerAction.redirect(
+                protocol="HTTPS", port="443", permanent=True
+            ),
         )
 
         self.a_record = route53.ARecord(
@@ -61,5 +69,10 @@ class PublicHttpAlb(Construct):
             "AliasRecord",
             zone=zone,
             record_name=a_record,
-            target=route53.RecordTarget.from_alias(route53_targets.LoadBalancerTarget(self.alb)),
+            target=route53.RecordTarget.from_alias(
+                cast(
+                    route53.IAliasRecordTarget,
+                    route53_targets.LoadBalancerTarget(self.alb),
+                )
+            ),
         )

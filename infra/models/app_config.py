@@ -13,9 +13,9 @@ class AppConfig:
     foundation: FoundationConfig
     authentik: AuthentikConfig
 
-    @staticmethod
-    def load(data: dict[str, Any]) -> Self:
-        return AppConfig(
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> Self:
+        return cls(
             tailscale_admin_email=data["tailscale_admin_email"],
             foundation=FoundationConfig.load(data["foundation"]),
             authentik=AuthentikConfig.load(data["authentik"]),
