@@ -23,9 +23,9 @@ DAG. But they can never declare a cyclical dependency.
 
 ## Bootstrapping
 
-A few steps need to be followed before we can deploy our infrastructure. Each
-step can be performed individually through the AWS console or its associated
-helper script, or together with the bootstrap script.
+A few steps need to be followed before we can deploy our infrastructure. The
+CDK stacks reference these secrets by name at deploy time, so bootstrapping is
+a prerequisite to `cdk deploy` — not an optional convenience.
 
 You can perform each of these steps manually (either through the AWS console, or
 using the convenience script), or run the bootstrap script:

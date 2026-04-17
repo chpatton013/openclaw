@@ -1,5 +1,3 @@
-import json
-
 from aws_cdk import (
     Aws,
     Duration,
@@ -47,36 +45,17 @@ class AuthentikStack(Stack):
         ###
         # Secrets
 
-        secret_key = secretsmanager.Secret(
-            self,
-            "SecretKey",
-            secret_name="authentik/service/secret-key",
-            generate_secret_string=secretsmanager.SecretStringGenerator(
-                password_length=50,
-                exclude_punctuation=True,
-                require_each_included_type=True,
-            ),
+        secret_key = secretsmanager.Secret.from_secret_name_v2(
+            self, "SecretKey", "authentik/secret-key"
         )
-        bootstrap_password = secretsmanager.Secret(
-            self,
-            "BootstrapPassword",
-            secret_name="authentik/bootstrap/password",
-            generate_secret_string=secretsmanager.SecretStringGenerator(
-                password_length=32,
-                require_each_included_type=True,
-            ),
+        bootstrap_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "BootstrapSecret", "authentik/bootstrap"
         )
-        smtp_credentials = secretsmanager.Secret(
-            self,
-            "SmtpCredentials",
-            secret_name="authentik/smtp-credentials",
-            generate_secret_string=secretsmanager.SecretStringGenerator(
-                password_length=32,
-                exclude_punctuation=True,
-                require_each_included_type=True,
-                generate_string_key="password",
-                secret_string_template=json.dumps({"username": cfg.smtp.username}),
-            ),
+        smtp_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "SmtpSecret", "authentik/smtp"
+        )
+        database_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "DatabaseSecret", "authentik/database"
         )
 
         ###
@@ -96,7 +75,7 @@ class AuthentikStack(Stack):
         database = PrivateIsolatedDatabaseInstance(
             self,
             "Database",
-            username=cfg.db.username,
+            secret=database_secret,
             vpc=shared.vpc,
             instance_kwargs=dict(
                 engine=rds.DatabaseInstanceEngine.postgres(
@@ -136,10 +115,10 @@ class AuthentikStack(Stack):
         }
 
         common_secrets = {
-            "AUTHENTIK_EMAIL__PASSWORD": ecs.Secret.from_secrets_manager(smtp_credentials, "password"),
-            "AUTHENTIK_EMAIL__USERNAME": ecs.Secret.from_secrets_manager(smtp_credentials, "username"),
-            "AUTHENTIK_POSTGRESQL__PASSWORD": ecs.Secret.from_secrets_manager(database.secret, "password"),
-            "AUTHENTIK_POSTGRESQL__USER": ecs.Secret.from_secrets_manager(database.secret, "username"),
+            "AUTHENTIK_EMAIL__PASSWORD": ecs.Secret.from_secrets_manager(smtp_secret, "password"),
+            "AUTHENTIK_EMAIL__USERNAME": ecs.Secret.from_secrets_manager(smtp_secret, "username"),
+            "AUTHENTIK_POSTGRESQL__PASSWORD": ecs.Secret.from_secrets_manager(database_secret, "password"),
+            "AUTHENTIK_POSTGRESQL__USER": ecs.Secret.from_secrets_manager(database_secret, "username"),
             "AUTHENTIK_SECRET_KEY": ecs.Secret.from_secrets_manager(secret_key),
         }
 
@@ -161,13 +140,11 @@ class AuthentikStack(Stack):
                     ecs.PortMapping(container_port=AUTHENTIK_HTTP_PORT, host_port=AUTHENTIK_HTTP_PORT),
                 ],
                 command=["server"],
-                environment={
-                    **common_env,
-                    "AUTHENTIK_BOOTSTRAP_EMAIL": cfg.bootstrap_email,
-                },
+                environment=common_env,
                 secrets={
                     **common_secrets,
-                    "AUTHENTIK_BOOTSTRAP_PASSWORD": ecs.Secret.from_secrets_manager(bootstrap_password),
+                    "AUTHENTIK_BOOTSTRAP_EMAIL": ecs.Secret.from_secrets_manager(bootstrap_secret, "email"),
+                    "AUTHENTIK_BOOTSTRAP_PASSWORD": ecs.Secret.from_secrets_manager(bootstrap_secret, "password"),
                 },
                 health_check=ecs.HealthCheck(
                     command=[

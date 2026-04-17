@@ -6,11 +6,9 @@ root_domain = "chiiiirs.com"
 [authentik]
 subdomain = "auth"
 image_version = "2026.2"
-bootstrap_email = "chpatton013@gmail.com"
 
 [authentik.db]
 name = "authentik"
-username = "authentik"
 instance_type = "t4g.small"
 allocated_storage_gib = 20
 
@@ -27,8 +25,7 @@ desired_count = 1
 [authentik.smtp]
 host = "smtp.chiiiirs.com"
 port = 587
-use_ssl = true
+use_ssl = false
 use_tls = true
-username = "authentik"
 from_email_address = "authentik@chiiiirs.com"
 

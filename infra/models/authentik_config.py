@@ -5,7 +5,6 @@ from typing import Any, Self
 @dataclass(frozen=True)
 class AuthentikDbConfig:
     name: str
-    username: str
     instance_type: str
     allocated_storage_gib: int
 
@@ -13,7 +12,6 @@ class AuthentikDbConfig:
     def load(data: dict[str, Any]) -> Self:
         return AuthentikDbConfig(
             name=data["name"],
-            username=data["username"],
             instance_type=data["instance_type"],
             allocated_storage_gib=data["allocated_storage_gib"],
         )
@@ -40,7 +38,6 @@ class AuthentikSmtpConfig:
     port: int
     use_ssl: bool
     use_tls: bool
-    username: str
     from_email_address: str
 
     @staticmethod
@@ -50,7 +47,6 @@ class AuthentikSmtpConfig:
             port=data["port"],
             use_ssl=data["use_ssl"],
             use_tls=data["use_tls"],
-            username=data["username"],
             from_email_address=data["from_email_address"],
         )
 
@@ -59,7 +55,6 @@ class AuthentikSmtpConfig:
 class AuthentikConfig:
     subdomain: str
     image_version: str
-    bootstrap_email: str
     db: AuthentikDbConfig
     server: AuthentikTaskConfig
     worker: AuthentikTaskConfig
@@ -70,7 +65,6 @@ class AuthentikConfig:
         return AuthentikConfig(
             subdomain=data["subdomain"],
             image_version=data["image_version"],
-            bootstrap_email=data["bootstrap_email"],
             db=AuthentikDbConfig.load(data["db"]),
             server=AuthentikTaskConfig.load(data["server"]),
             worker=AuthentikTaskConfig.load(data["worker"]),
