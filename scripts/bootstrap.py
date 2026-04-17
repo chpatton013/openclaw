@@ -8,9 +8,10 @@ from dataclasses import dataclass
 
 HERE = pathlib.Path(__file__).parent
 REPO_ROOT = HERE.parent
+BIN_DIR = REPO_ROOT / "bin"
 CONFIG_PATH = REPO_ROOT / "config.toml"
-CREATE_HOSTED_ZONE = HERE / "aws" / "create-hosted-zone"
-WRITE_SECRET = HERE / "aws" / "write-secret"
+CREATE_HOSTED_ZONE = BIN_DIR / "aws-create-hosted-zone"
+WRITE_SECRET = BIN_DIR / "aws-write-secret"
 
 sys.path.insert(0, str(REPO_ROOT))
 from infra.models.app_config import load_config  # noqa: E402

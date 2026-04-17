@@ -1,6 +1,0 @@
-#!/bin/bash --norc
-here="$(dirname "${BASH_SOURCE[0]}")"
-exec uvx \
-  --with-requirements "$here/../../requirements.txt" \
-  --with-requirements "$here/../requirements.txt" \
-  pyright "$@"

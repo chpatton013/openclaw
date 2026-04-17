@@ -29,7 +29,7 @@ a prerequisite to `cdk deploy` — not an optional convenience.
 
 You can perform each of these steps manually (either through the AWS console, or
 using the convenience script), or run the bootstrap script:
-- `scripts/bootstrap`
+- `bin/bootstrap`
 
 Bootstrapping steps:
 
@@ -38,15 +38,15 @@ Bootstrapping steps:
         - Route 53 > Hosted Zones > Create hosted zone
         - Fill in your domain, select "Public hosted zone", then "Create hosted zone"
     - Helper script
-        - `scripts/aws/create-hosted-zone DOMAIN`
+        - `bin/aws-create-hosted-zone DOMAIN`
 2. Create persistent secrets used by AWS services.
     - AWS console
         - TODO
     - Helper script
-        - `scripts/aws/write-secret authentik/secret-key --length=50 --exclude-punctuation`
-        - `scripts/aws/write-secret authentik/bootstrap --template='{"email":"EMAIL"}' --key=password`
-        - `scripts/aws/write-secret authentik/database --template='{"username":"USERNAME"}' --key=password`
-        - `scripts/aws/write-secret authentik/smtp --template='{"username":"USERNAME"}' --key=password`
+        - `bin/aws-write-secret authentik/secret-key --length=50 --exclude-punctuation`
+        - `bin/aws-write-secret authentik/bootstrap --template='{"email":"EMAIL"}' --key=password`
+        - `bin/aws-write-secret authentik/database --template='{"username":"USERNAME"}' --key=password`
+        - `bin/aws-write-secret authentik/smtp --template='{"username":"USERNAME"}' --key=password`
 
 ## Deploying
 
