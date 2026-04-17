@@ -64,6 +64,27 @@ cdk deploy --all
  * `cdk diff`        compare deployed stack with current state
  * `cdk docs`        open CDK documentation
 
+## Development
+
+Run validators against the whole repo (or a file/dir/glob subset):
+
+```
+bin/validate              # all tracked files
+bin/validate --fix        # apply fixers then check
+bin/validate infra/       # restrict to a subtree
+bin/validate --dirty      # only staged files
+```
+
+Install the git pre-commit hook (symlinks `bin/pre-commit` into `.git/hooks/`):
+
+```
+bin/pre-commit --install
+```
+
+Per-directory validator scoping is driven by `.validator.toml` files. The
+repo-root file enables `python-black` and `python-pyright` on all `.py` files;
+nested `.validator.toml` files can narrow or extend that config.
+
  ## Contents
 
 ### AWS

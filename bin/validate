@@ -8,7 +8,8 @@ while [ -L "$source" ]; do
 done
 here="$(cd -P "$(dirname "$source")" && pwd)"
 repo_root="$(dirname "$here")"
-exec uvx \
+exec uv run \
   --with-requirements "$repo_root/requirements.txt" \
+  --with-requirements "$repo_root/requirements-dev.txt" \
   --with-requirements "$repo_root/scripts/requirements.txt" \
-  pyright "$@"
+  python -m validator "$@"

@@ -9,5 +9,7 @@ done
 here="$(cd -P "$(dirname "$source")" && pwd)"
 repo_root="$(dirname "$here")"
 exec uv run \
-  --with-requirements "$repo_root/scripts/aws/requirements.txt" \
-  "$repo_root/scripts/aws/write_secret.py" "$@"
+  --with-requirements "$repo_root/requirements.txt" \
+  --with-requirements "$repo_root/requirements-dev.txt" \
+  --with-requirements "$repo_root/scripts/requirements.txt" \
+  python -m unittest discover -s "$repo_root/tests" -t "$repo_root" "$@"

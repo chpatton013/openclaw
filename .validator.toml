@@ -1,0 +1,34 @@
+[validator.python-black]
+include_files = ["**/*.py"]
+
+[validator.python-filename]
+include_files = ["**/*.py"]
+
+[validator.case-conflict]
+include_files = ["**"]
+
+[validator.conflict-markers]
+include_files = ["**"]
+
+[validator.keep-sorted]
+include_files = ["**"]
+
+[validator.filename-chars]
+include_files = ["**"]
+
+[validator.executable-extension]
+include_files = ["**"]
+
+[validator.symlink]
+include_files = ["**"]
+
+[validator.unicode]
+include_files = ["**"]
+exclude_files = ["**/Makefile", "**/*.make", "**/*.md"]
+
+[validator.trailing-newline]
+include_files = ["**"]
+
+[validator.trailing-whitespace]
+include_files = ["**"]
+exclude_files = ["**/*.md"]
