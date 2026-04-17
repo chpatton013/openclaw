@@ -1,5 +1,7 @@
-root_domain = "chiiiirs.com"
 tailscale_admin_email = "admin@chiiiirs.com"
+
+[foundation]
+root_domain = "chiiiirs.com"
 
 [authentik]
 subdomain = "auth"
@@ -25,6 +27,8 @@ desired_count = 1
 [authentik.smtp]
 host = "smtp.chiiiirs.com"
 port = 587
+use_ssl = true
 use_tls = true
+username = "authentik"
 from_email_address = "authentik@chiiiirs.com"
 

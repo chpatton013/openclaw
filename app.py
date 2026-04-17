@@ -15,7 +15,7 @@ app = cdk.App()
 cfg = load_config(pathlib.Path(__file__).parent / "config.toml")
 env = env=cdk.Environment(account=os.getenv('CDK_DEFAULT_ACCOUNT'), region=os.getenv('CDK_DEFAULT_REGION'))
 
-shared = FoundationStack(app, "FoundationStack", cfg=cfg, env=env).exports
+shared = FoundationStack(app, "FoundationStack", cfg=cfg.foundation, env=env).exports
 AuthentikStack(app, "AuthentikStack", cfg=cfg.authentik, shared=shared, env=env)
 OpenClawStack(app, "OpenClawStack", env=env)
 

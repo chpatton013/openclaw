@@ -1,5 +1,5 @@
 {
-  "app": "python3 app.py",
+  "app": "uv run --with-requirements requirements.txt app.py",
   "watch": {
     "include": [
       "infra/**"

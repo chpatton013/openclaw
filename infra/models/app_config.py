@@ -4,19 +4,20 @@ from dataclasses import dataclass
 from typing import Any, Self
 
 from .authentik_config import AuthentikConfig
+from .foundation_config import FoundationConfig
 
 
 @dataclass(frozen=True)
 class AppConfig:
-    root_domain: str
     tailscale_admin_email: str
+    foundation: FoundationConfig
     authentik: AuthentikConfig
 
     @staticmethod
     def load(data: dict[str, Any]) -> Self:
         return AppConfig(
-            root_domain=data["root_domain"],
             tailscale_admin_email=data["tailscale_admin_email"],
+            foundation=FoundationConfig.load(data["foundation"]),
             authentik=AuthentikConfig.load(data["authentik"]),
         )
 

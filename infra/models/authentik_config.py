@@ -38,7 +38,9 @@ class AuthentikTaskConfig:
 class AuthentikSmtpConfig:
     host: str
     port: int
+    use_ssl: bool
     use_tls: bool
+    username: str
     from_email_address: str
 
     @staticmethod
@@ -46,7 +48,9 @@ class AuthentikSmtpConfig:
         return AuthentikSmtpConfig(
             host=data["host"],
             port=data["port"],
+            use_ssl=data["use_ssl"],
             use_tls=data["use_tls"],
+            username=data["username"],
             from_email_address=data["from_email_address"],
         )
 

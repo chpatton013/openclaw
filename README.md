@@ -1,53 +1,62 @@
+# Personal Cloud Deployment
 
-# Welcome to your CDK Python project!
+This repo hosts the infrastructure-as-code (IaC) for my personal cloud
+deployment, which is split across AWS (in progress) and a private homelab
+(coming soon).
 
-This is a blank project for CDK development with Python.
+## Dependencies
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+- [Node.js and npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
+- [Amazon CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting-started.html)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
-This project is set up like a standard Python project.  The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
+## Organization
 
-To manually create a virtualenv on MacOS and Linux:
+CDK organizes infrastructure into "stacks". Each stack has its own name, and can
+be deployed individually. Each stack is composed of one or more "constructs",
+which are either individual infrastructure resources, or collections of
+infrastructure resources. The relationships between a parent stack to its child
+constructs, and parent constructs to their child constructs creates a resource
+dependency tree. Constructs may declare relationships to other constructs across
+branches of that tree, or even into the trees of other stacks, forming a rich
+DAG. But they can never declare a cyclical dependency.
 
+## Bootstrapping
+
+A few steps need to be followed before we can deploy our infrastructure. Each
+step can be performed individually through the AWS console or its associated
+helper script, or together with the bootstrap script.
+
+You can perform each of these steps manually (either through the AWS console, or
+using the convenience script), or run the bootstrap script:
+- `scripts/bootstrap`
+
+Bootstrapping steps:
+
+1. Create a public hosted zone for your domain in AWS.
+    - AWS console
+        - Route 53 > Hosted Zones > Create hosted zone
+        - Fill in your domain, select "Public hosted zone", then "Create hosted zone"
+    - Helper script
+        - `scripts/aws/create-hosted-zone DOMAIN`
+2. Create persistent secrets used by AWS services.
+    - AWS console
+        - TODO
+    - Helper script
+        - `scripts/aws/write-secret authentik/secret-key --length=50 --exclude-punctuation`
+        - `scripts/aws/write-secret authentik/bootstrap --template='{"email":"EMAIL"}' --key=password`
+        - `scripts/aws/write-secret authentik/database --template='{"username":"USERNAME"}' --key=password`
+        - `scripts/aws/write-secret authentik/smtp --template='{"username":"USERNAME"}' --key=password`
+
+## Deploying
+
+AWS:
 ```
-$ python3 -m venv .venv
+cdk deploy STACK_NAME
+cdk deploy --all
 ```
 
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
-
-```
-$ source .venv/bin/activate
-```
-
-If you are a Windows platform, you would activate the virtualenv like this:
-
-```
-% .venv\Scripts\activate.bat
-```
-
-Once the virtualenv is activated, you can install the required dependencies.
-
-```
-$ pip install -r requirements.txt
-```
-
-At this point you can now synthesize the CloudFormation template for this code.
-
-```
-$ cdk synth
-```
-
-To add additional dependencies, for example other CDK libraries, just add
-them to your `requirements.txt` file and rerun the `python -m pip install -r requirements.txt`
-command.
-
-## Useful commands
+### Other useful commands
 
  * `cdk ls`          list all stacks in the app
  * `cdk synth`       emits the synthesized CloudFormation template
@@ -55,4 +64,39 @@ command.
  * `cdk diff`        compare deployed stack with current state
  * `cdk docs`        open CDK documentation
 
-Enjoy!
+ ## Contents
+
+### AWS
+
+- [Foundation Stack](./infra/stacks/foundation_stack.py)
+    - Declares shared resources used by all other stacks.
+    - Resources:
+        - Hosted Zone and VPC
+        - ECS cluster
+- [Authentik Stack](./infra/stacks/authentik_stack.py)
+    - OIDC identity provider
+    - Resources:
+        - Storage: S3 media bucket, RDS PostGres database
+        - Services: Authentik Server and Worker Fargate service containers
+        - Network: publicly-accessible Application Load Balancer
+    - TODO:
+        - Setup an ECR to mirror Authentik container image
+- [OpenClaw Stack](./infra/stacks/openclaw_stack.py)
+    - Agentic assistant platform
+    - Resources:
+        - Storage: EFS volume, backup plan
+        - Services: EC2 instance running openclaw node daemon
+        - Network: VPC
+    - Notes:
+        - I consider this service to be high-risk to run, so I've isolated it in
+          several ways. It has its own VPC, is running on a machine that can
+          only be accessed via SSM connection sessions, and currently has no
+          privileges to communicate with anything internal.
+        - I may want to modify this setup to reuse the foundation VPC and host
+          in Fargate. Will need to get more trust in the system first.
+- Planned stacks:
+    - WebFinger
+    - Vaultwarden
+    - Headscale
+    - searXNG
+    - Matrix

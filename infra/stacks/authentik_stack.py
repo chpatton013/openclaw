@@ -15,11 +15,12 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+from ..constructs.database_instance import PrivateIsolatedDatabaseInstance
+from ..constructs.fargate_service import PrivateEgressFargateService
+from ..constructs.public_http_alb import PublicHttpAlb
 from ..models.authentik_config import AuthentikConfig
 from ..models.foundation_exports import FoundationExports
 from ..models.instance_type import INSTANCE_TYPES
-from ..constructs.fargate_service import PrivateEgressFargateService
-from ..constructs.public_http_alb import PublicHttpAlb
 
 
 AUTHENTIK_HTTP_PORT = 9000
@@ -46,26 +47,35 @@ class AuthentikStack(Stack):
         ###
         # Secrets
 
-        secret_key = secretsmanager.Secret.from_secret_name_v2(
-            self, "SecretKey", "prod/authentik/service/secret-key"
-        )
-        bootstrap_password = secretsmanager.Secret.from_secret_name_v2(
-            self, "BootstrapPassword", "prod/authentik/bootstrap/password"
-        )
-        smtp_username = secretsmanager.Secret.from_secret_name_v2(
-            self, "SmtpUsername", "prod/authentik/smtp/username"
-        )
-        smtp_password = secretsmanager.Secret.from_secret_name_v2(
-            self, "SmtpPassword", "prod/authentik/smtp/password"
-        )
-
-        db_secret = secretsmanager.Secret(
+        secret_key = secretsmanager.Secret(
             self,
-            "DbSecret",
+            "SecretKey",
+            secret_name="authentik/service/secret-key",
             generate_secret_string=secretsmanager.SecretStringGenerator(
+                password_length=50,
                 exclude_punctuation=True,
+                require_each_included_type=True,
+            ),
+        )
+        bootstrap_password = secretsmanager.Secret(
+            self,
+            "BootstrapPassword",
+            secret_name="authentik/bootstrap/password",
+            generate_secret_string=secretsmanager.SecretStringGenerator(
+                password_length=32,
+                require_each_included_type=True,
+            ),
+        )
+        smtp_credentials = secretsmanager.Secret(
+            self,
+            "SmtpCredentials",
+            secret_name="authentik/smtp-credentials",
+            generate_secret_string=secretsmanager.SecretStringGenerator(
+                password_length=32,
+                exclude_punctuation=True,
+                require_each_included_type=True,
                 generate_string_key="password",
-                secret_string_template=json.dumps({"username": cfg.db.username}),
+                secret_string_template=json.dumps({"username": cfg.smtp.username}),
             ),
         )
 
@@ -83,25 +93,26 @@ class AuthentikStack(Stack):
             auto_delete_objects=False,
         )
 
-        db_instance = rds.DatabaseInstance(
+        database = PrivateIsolatedDatabaseInstance(
             self,
-            "DbInstance",
-            engine=rds.DatabaseInstanceEngine.postgres(
-                version=rds.PostgresEngineVersion.VER_16
-            ),
-            instance_type=INSTANCE_TYPES[cfg.db.instance_type],
+            "Database",
+            username=cfg.db.username,
             vpc=shared.vpc,
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED),
-            credentials=rds.Credentials.from_secret(db_secret),
-            database_name=cfg.db.name,
-            allocated_storage=cfg.db.allocated_storage_gib,
-            max_allocated_storage=100,
-            multi_az=False,
-            backup_retention=Duration.days(7),
-            deletion_protection=True,
-            storage_encrypted=True,
-            security_groups=[shared.internal_sg],
-            publicly_accessible=False,
+            instance_kwargs=dict(
+                engine=rds.DatabaseInstanceEngine.postgres(
+                    version=rds.PostgresEngineVersion.VER_16
+                ),
+                port=AUTHENTIK_DB_PORT,
+                instance_type=INSTANCE_TYPES[cfg.db.instance_type],
+                database_name=cfg.db.name,
+                allocated_storage=cfg.db.allocated_storage_gib,
+                max_allocated_storage=100,
+                multi_az=False,
+                backup_retention=Duration.days(7),
+                deletion_protection=True,
+                storage_encrypted=True,
+                publicly_accessible=False,
+            ),
         )
 
         ###
@@ -113,8 +124,9 @@ class AuthentikStack(Stack):
             "AUTHENTIK_EMAIL__HOST": cfg.smtp.host,
             "AUTHENTIK_EMAIL__PORT": str(cfg.smtp.port),
             "AUTHENTIK_EMAIL__USE_TLS": str(cfg.smtp.use_tls).lower(),
+            "AUTHENTIK_EMAIL__USE_SSL": str(cfg.smtp.use_ssl).lower(),
             "AUTHENTIK_LISTEN__HTTP": f"0.0.0.0:{AUTHENTIK_HTTP_PORT}",
-            "AUTHENTIK_POSTGRESQL__HOST": db_instance.db_instance_endpoint_address,
+            "AUTHENTIK_POSTGRESQL__HOST": database.instance.db_instance_endpoint_address,
             "AUTHENTIK_POSTGRESQL__NAME": cfg.db.name,
             "AUTHENTIK_POSTGRESQL__PORT": str(AUTHENTIK_DB_PORT),
             "AUTHENTIK_STORAGE__BACKEND": "s3",
@@ -124,10 +136,10 @@ class AuthentikStack(Stack):
         }
 
         common_secrets = {
-            "AUTHENTIK_EMAIL__PASSWORD": ecs.Secret.from_secrets_manager(smtp_password),
-            "AUTHENTIK_EMAIL__USERNAME": ecs.Secret.from_secrets_manager(smtp_username),
-            "AUTHENTIK_POSTGRESQL__PASSWORD": ecs.Secret.from_secrets_manager(db_secret, "password"),
-            "AUTHENTIK_POSTGRESQL__USER": ecs.Secret.from_secrets_manager(db_secret, "username"),
+            "AUTHENTIK_EMAIL__PASSWORD": ecs.Secret.from_secrets_manager(smtp_credentials, "password"),
+            "AUTHENTIK_EMAIL__USERNAME": ecs.Secret.from_secrets_manager(smtp_credentials, "username"),
+            "AUTHENTIK_POSTGRESQL__PASSWORD": ecs.Secret.from_secrets_manager(database.secret, "password"),
+            "AUTHENTIK_POSTGRESQL__USER": ecs.Secret.from_secrets_manager(database.secret, "username"),
             "AUTHENTIK_SECRET_KEY": ecs.Secret.from_secrets_manager(secret_key),
         }
 
@@ -216,9 +228,11 @@ class AuthentikStack(Stack):
         )
         server_service.task_defn.add_to_task_role_policy(bucket_access_policy_statement)
         worker_service.task_defn.add_to_task_role_policy(bucket_access_policy_statement)
+
         # Allow server and worker services to connect to DB instance.
-        db_instance.connections.allow_default_port_from(server_service.service)
-        db_instance.connections.allow_default_port_from(worker_service.service)
+        database.instance.connections.allow_default_port_from(server_service.service)
+        database.instance.connections.allow_default_port_from(worker_service.service)
+
         # Allow ALB to connect to server service HTTP port.
         server_service.security_group.add_ingress_rule(
             alb.security_group,

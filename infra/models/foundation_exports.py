@@ -13,4 +13,3 @@ class FoundationExports:
     zone: route53.IHostedZone
     vpc: ec2.IVpc
     cluster: ecs.ICluster
-    internal_sg: ec2.ISecurityGroup

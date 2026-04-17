@@ -16,17 +16,17 @@ from aws_cdk import (
 )
 from constructs import Construct
 
-from ..models.app_config import AppConfig
+from ..models.foundation_config import FoundationConfig
 from ..models.foundation_exports import FoundationExports
 
 
 class FoundationStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, *, cfg: AppConfig, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, *, cfg: FoundationConfig, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         zone = route53.HostedZone.from_lookup(
             self,
-            "HostedZone",
+            "Zone",
             domain_name=cfg.root_domain,
         )
 
@@ -56,18 +56,10 @@ class FoundationStack(Stack):
 
         cluster = ecs.Cluster(self, "Cluster", vpc=vpc)
 
-        internal_sg = ec2.SecurityGroup(
-            self,
-            "InternalServicesSecurityGroup",
-            vpc=vpc,
-            allow_all_outbound=True,
-        )
-
         self.exports = FoundationExports(
             domain=cfg.root_domain,
             zone=zone,
             vpc=vpc,
             cluster=cluster,
-            internal_sg=internal_sg,
         )
 
