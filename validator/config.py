@@ -37,7 +37,7 @@ def load_tomls(repo_root: pathlib.Path) -> list[tuple[pathlib.Path, dict]]:
 def _matches_any(globs: list[str], file_rel: str) -> bool:
     if not globs:
         return False
-    spec = PathSpec.from_lines("gitwildmatch", globs)
+    spec = PathSpec.from_lines("gitignore", globs)
     return spec.match_file(file_rel)
 
 

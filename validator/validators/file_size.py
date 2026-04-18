@@ -45,7 +45,7 @@ def _parse_lfs_gitattributes(path: pathlib.Path) -> list[pathspec.PathSpec]:
                 continue
             parts = line.split()
             if len(parts) >= 2 and any("filter=lfs" in p for p in parts[1:]):
-                specs.append(pathspec.PathSpec.from_lines("gitwildmatch", [parts[0]]))
+                specs.append(pathspec.PathSpec.from_lines("gitignore", [parts[0]]))
     except OSError:
         pass
     return specs
