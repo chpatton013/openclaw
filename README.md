@@ -1,5 +1,7 @@
 # Personal Cloud Deployment
 
+[![test](https://github.com/chpatton013/openclaw/actions/workflows/test.yml/badge.svg)](https://github.com/chpatton013/openclaw/actions/workflows/test.yml)
+
 This repo hosts the infrastructure-as-code (IaC) for my personal cloud
 deployment, which is split across AWS (in progress) and a private homelab
 (coming soon).
@@ -121,3 +123,27 @@ nested `.validator.toml` files can narrow or extend that config.
     - Headscale
     - searXNG
     - Matrix
+
+## Next
+
+- Validators are not enforced in CI. A PR can land formatter drift
+if the author skipped bin/validate and the pre-commit hook isn't
+installed. Acceptable for now — the cost (8 dotslash downloads per
+CI run, plus yamllint Python install) is real and the local gate is
+decent. Revisit if drift becomes routine; the cleanest fix is a second
+workflow .github/workflows/validate.yml that caches ~/.cache/dotslash.
+- No caching. First-run dotslash invocations download per-platform
+binaries (~10s total). Adding actions/cache keyed on the manifest
+hashes would cut a few seconds; skip until it actually hurts.
+- Single OS. No macOS runner. bin/test is Python-only and not
+platform-sensitive, so this is fine. If we ever ship code that branches
+on platform, add macos-latest to the matrix.
+- AWS-touching tests would break CI. bin/test today runs unit tests
+only. If we add tests that call boto3/CDK against real AWS, they'll
+fail on the runner (no credentials). Keep AWS-touching tests out of the
+default test target, or gate them behind an env var the workflow doesn't
+set.
+- Default branch assumption. The badge URL implicitly tracks the
+repo's default branch. If we ever rename main, update the workflow's
+trigger branches but the badge URL keeps working (GitHub follows the
+default branch).
