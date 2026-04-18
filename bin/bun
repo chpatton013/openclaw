@@ -1,0 +1,55 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "bun",
+  "platforms": {
+    "macos-aarch64": {
+      "size": 22264502,
+      "hash": "blake3",
+      "digest": "c4e41d1deb1b1d4371eb523be3d50d9f1b6cb2ad645b2d3606e34a8070664aa5",
+      "format": "zip",
+      "path": "bun-darwin-aarch64/bun",
+      "providers": [
+        {
+          "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.12/bun-darwin-aarch64.zip"
+        }
+      ]
+    },
+    "macos-x86_64": {
+      "size": 24988535,
+      "hash": "blake3",
+      "digest": "0054d10e320f363a53e40e91b4d3a4e0a9630525a0295effa38641a85653af39",
+      "format": "zip",
+      "path": "bun-darwin-x64/bun",
+      "providers": [
+        {
+          "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.12/bun-darwin-x64.zip"
+        }
+      ]
+    },
+    "linux-aarch64": {
+      "size": 38315273,
+      "hash": "blake3",
+      "digest": "a7cf5f27c7374ac90ad86ac11e9af3bc06290791370ae938448d1d842c942212",
+      "format": "zip",
+      "path": "bun-linux-aarch64/bun",
+      "providers": [
+        {
+          "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.12/bun-linux-aarch64.zip"
+        }
+      ]
+    },
+    "linux-x86_64": {
+      "size": 38613565,
+      "hash": "blake3",
+      "digest": "f2995d5987687ce2525aee1adf58f05055279dd5752c5853e7563c90f6a5c675",
+      "format": "zip",
+      "path": "bun-linux-x64/bun",
+      "providers": [
+        {
+          "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.12/bun-linux-x64.zip"
+        }
+      ]
+    }
+  }
+}
