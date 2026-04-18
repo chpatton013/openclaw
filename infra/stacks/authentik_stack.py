@@ -141,6 +141,7 @@ class AuthentikStack(Stack):
             cpu=cfg.server.cpu,
             memory_limit_mib=cfg.server.memory_limit_mib,
             desired_count=cfg.server.desired_count,
+            min_healthy_percent=cfg.server.min_healthy_percent,
             vpc=shared.vpc,
             cluster=shared.cluster,
             container_kwargs=dict(
@@ -181,6 +182,7 @@ class AuthentikStack(Stack):
             cpu=cfg.worker.cpu,
             memory_limit_mib=cfg.worker.memory_limit_mib,
             desired_count=cfg.worker.desired_count,
+            min_healthy_percent=cfg.worker.min_healthy_percent,
             vpc=shared.vpc,
             cluster=shared.cluster,
             container_kwargs=dict(

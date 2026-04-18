@@ -22,6 +22,7 @@ class AuthentikTaskConfig:
     cpu: int
     memory_limit_mib: int
     desired_count: int
+    min_healthy_percent: float
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
@@ -29,6 +30,7 @@ class AuthentikTaskConfig:
             cpu=data["cpu"],
             memory_limit_mib=data["memory_limit_mib"],
             desired_count=data["desired_count"],
+            min_healthy_percent=data["min_healthy_percent"],
         )
 
 

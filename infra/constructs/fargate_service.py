@@ -18,6 +18,7 @@ class PrivateEgressFargateService(Construct):
         cpu: int,
         memory_limit_mib: int,
         desired_count: int,
+        min_healthy_percent: int,
         vpc: ec2.IVpc,
         cluster: ecs.ICluster,
         container_kwargs: dict[str, Any],
@@ -48,6 +49,7 @@ class PrivateEgressFargateService(Construct):
             cluster=cluster,
             task_definition=self.task_defn,
             desired_count=desired_count,
+            min_healthy_percent=100,
             assign_public_ip=False,
             security_groups=[self.security_group],
             vpc_subnets=ec2.SubnetSelection(

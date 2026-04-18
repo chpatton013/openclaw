@@ -16,11 +16,13 @@ allocated_storage_gib = 20
 cpu = 1024
 memory_limit_mib = 2048
 desired_count = 1
+min_healthy_percent = 100
 
 [authentik.worker]
 cpu = 1024
 memory_limit_mib = 2048
 desired_count = 1
+min_healthy_percent = 100
 
 [authentik.smtp]
 host = "smtp.chiiiirs.com"
