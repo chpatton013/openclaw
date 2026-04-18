@@ -18,10 +18,10 @@ Linux*)
   arch="$(uname -m)"
   case "$arch" in
   aarch64)
-    dotslash_release_url+="/dotslash-linux-musl-aarch64.tar.gz"
+    dotslash_release_url+="/dotslash-linux-musl.aarch64.tar.gz"
     ;;
   x86_64)
-    dotslash_release_url+="/dotslash-linux-musl-x86_64.tar.gz"
+    dotslash_release_url+="/dotslash-linux-musl.x86_64.tar.gz"
     ;;
   *)
     echo "Unsupported architecture: $arch" >&2
