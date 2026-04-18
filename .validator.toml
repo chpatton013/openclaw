@@ -1,3 +1,26 @@
+[validator.dotslash]
+include_files = ["bin/*"]
+
+[validator.biome]
+include_files = [
+  "**/*.css",
+  "**/*.htm",
+  "**/*.html",
+  "**/*.js",
+  "**/*.json",
+  "**/*.jsonc",
+  "**/*.jsx",
+  "**/*.ts",
+  "**/*.tsx",
+]
+exclude_files = ["bin/*"]
+
+[validator.gitleaks]
+include_files = ["**"]
+
+[validator.ini]
+include_files = ["**/*.cfg", "**/*.ini"]
+
 [validator.python-black]
 include_files = ["**/*.py"]
 
@@ -15,30 +38,42 @@ include_files = ["**/*.rs"]
 
 [validator.shellcheck]
 include_files = [
-    "**/*.bash",
-    "**/*.sh",
-    "bin/aws-create-hosted-zone",
-    "bin/aws-write-secret",
-    "bin/bootstrap",
-    "bin/pre-commit",
-    "bin/test",
-    "bin/validate",
+  "**/*.bash",
+  "**/*.sh",
+  "bin/aws-create-hosted-zone",
+  "bin/aws-write-secret",
+  "bin/bootstrap",
+  "bin/pre-commit",
+  "bin/test",
+  "bin/validate",
 ]
 
 [validator.shfmt]
 include_files = [
-    "**/*.bash",
-    "**/*.sh",
-    "bin/aws-create-hosted-zone",
-    "bin/aws-write-secret",
-    "bin/bootstrap",
-    "bin/pre-commit",
-    "bin/test",
-    "bin/validate",
+  "**/*.bash",
+  "**/*.sh",
+  "bin/aws-create-hosted-zone",
+  "bin/aws-write-secret",
+  "bin/bootstrap",
+  "bin/pre-commit",
+  "bin/test",
+  "bin/validate",
 ]
+
+[validator.taplo]
+include_files = ["**/*.toml"]
 
 [validator.terraform-fmt]
 include_files = ["**/*.tf", "**/*.tfvars"]
+
+[validator.xml]
+include_files = ["**/*.xml"]
+
+[validator.yamlfmt]
+include_files = ["**/*.yaml", "**/*.yml"]
+
+[validator.yamllint]
+include_files = ["**/*.yaml", "**/*.yml"]
 
 [validator.case-conflict]
 include_files = ["**"]

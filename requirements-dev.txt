@@ -2,3 +2,4 @@ black
 pathspec>=0.12
 pyright
 pyupgrade
+yamllint

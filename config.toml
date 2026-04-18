@@ -28,4 +28,3 @@ port = 587
 use_ssl = false
 use_tls = true
 from_email_address = "authentik@chiiiirs.com"
-

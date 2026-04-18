@@ -1,0 +1,51 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "biome",
+  "platforms": {
+    "macos-aarch64": {
+      "size": 47461856,
+      "hash": "blake3",
+      "digest": "77025bbeff3a0a8bdc57fcb9740b426a8c195e1a5aaeb54671be34b50fb74881",
+      "path": "biome",
+      "providers": [
+        {
+          "url": "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.4.12/biome-darwin-arm64"
+        }
+      ]
+    },
+    "macos-x86_64": {
+      "size": 50456908,
+      "hash": "blake3",
+      "digest": "78f64562d7151aa1960ccf019ca746fcc57ed986f167f43502d503532e973e9b",
+      "path": "biome",
+      "providers": [
+        {
+          "url": "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.4.12/biome-darwin-x64"
+        }
+      ]
+    },
+    "linux-aarch64": {
+      "size": 47204480,
+      "hash": "blake3",
+      "digest": "e5250a69d6028703ae82a48066dbadf741c80a2c78b9230061d7a21ac2d6f2b0",
+      "path": "biome",
+      "providers": [
+        {
+          "url": "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.4.12/biome-linux-arm64-musl"
+        }
+      ]
+    },
+    "linux-x86_64": {
+      "size": 54586048,
+      "hash": "blake3",
+      "digest": "0b26bbb69bd4b9c532ec76bb806cd106d1bf488faff9b246b4be8b478f2dc084",
+      "path": "biome",
+      "providers": [
+        {
+          "url": "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.4.12/biome-linux-x64-musl"
+        }
+      ]
+    }
+  }
+}

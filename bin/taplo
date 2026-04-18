@@ -1,0 +1,55 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "taplo",
+  "platforms": {
+    "macos-aarch64": {
+      "size": 4616415,
+      "hash": "blake3",
+      "digest": "353ecb1ed7d279dec5e2fd388d292ef97db08a651405fa664ffec1b2896c05f0",
+      "format": "gz",
+      "path": "taplo",
+      "providers": [
+        {
+          "url": "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz"
+        }
+      ]
+    },
+    "macos-x86_64": {
+      "size": 4921954,
+      "hash": "blake3",
+      "digest": "25bac73e9259cfc8155e8ad1d93c02f611983a81ab2863eeecbdd5de7170fe93",
+      "format": "gz",
+      "path": "taplo",
+      "providers": [
+        {
+          "url": "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-x86_64.gz"
+        }
+      ]
+    },
+    "linux-aarch64": {
+      "size": 4631779,
+      "hash": "blake3",
+      "digest": "7f7a3ddaa5acf0bc243fc1134dc68a94a39b2bef91000f7866dd90e4bd670b5e",
+      "format": "gz",
+      "path": "taplo",
+      "providers": [
+        {
+          "url": "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-aarch64.gz"
+        }
+      ]
+    },
+    "linux-x86_64": {
+      "size": 5116068,
+      "hash": "blake3",
+      "digest": "4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead8e2",
+      "format": "gz",
+      "path": "taplo",
+      "providers": [
+        {
+          "url": "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"
+        }
+      ]
+    }
+  }
+}

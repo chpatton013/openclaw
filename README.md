@@ -6,9 +6,9 @@ deployment, which is split across AWS (in progress) and a private homelab
 
 ## Dependencies
 
+- [dotslash](https://dotslash-cli.com/docs/installation/)
 - [Node.js and npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
 - [Amazon CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting-started.html)
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ## Organization
 
@@ -121,13 +121,3 @@ nested `.validator.toml` files can narrow or extend that config.
     - Headscale
     - searXNG
     - Matrix
-
-## Validators
-
-- xml (xml.etree.cElementTree.parse)
-
-- toml
-- yaml
-- json
-
-- gitleaks
