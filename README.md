@@ -57,12 +57,14 @@ Run this command to deploy the AWS infrastructure:
 
 ```sh
 bin/cdk deploy --all --trace \
+    --require-approval never \
     --concurrency="$(nproc --all)" \
     --asset-build-concurrency="$(nproc --all)"
 ```
 
 You can modify those concurrency parameters or replace `--all` with the names of
-specific stacks, as needed.
+specific stacks, as needed. `--require-approval` can be omitted if you aren't
+running with any concurrency.
 
 ## Manual Bootstrapping
 
