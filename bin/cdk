@@ -7,4 +7,4 @@ while [ -L "$source" ]; do
   [[ $source != /* ]] && source="$dir/$source"
 done
 here="$(cd -P "$(dirname "$source")" && pwd)"
-exec "$here/bun" x aws-cdk "$@"
+exec "$here/bun" x --package aws-cdk cdk "$@"
