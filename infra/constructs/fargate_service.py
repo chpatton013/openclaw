@@ -49,7 +49,8 @@ class PrivateEgressFargateService(Construct):
             cluster=cluster,
             task_definition=self.task_defn,
             desired_count=desired_count,
-            min_healthy_percent=100,
+            min_healthy_percent=min_healthy_percent,
+            circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=False),
             assign_public_ip=False,
             security_groups=[self.security_group],
             vpc_subnets=ec2.SubnetSelection(

@@ -40,6 +40,7 @@ include_files = ["**/*.rs"]
 include_files = [
   "**/*.bash",
   "**/*.sh",
+  "bin/aws",
   "bin/aws-create-hosted-zone",
   "bin/aws-write-secret",
   "bin/bootstrap",
@@ -53,6 +54,7 @@ include_files = [
 include_files = [
   "**/*.bash",
   "**/*.sh",
+  "bin/aws",
   "bin/aws-create-hosted-zone",
   "bin/aws-write-secret",
   "bin/bootstrap",

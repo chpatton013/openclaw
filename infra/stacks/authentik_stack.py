@@ -168,14 +168,11 @@ class AuthentikStack(Stack):
                     ),
                 },
                 health_check=ecs.HealthCheck(
-                    command=[
-                        "CMD-SHELL",
-                        f"wget -qO- http://127.0.0.1:{AUTHENTIK_HTTP_PORT}{health_check_path} >/dev/null || exit 1",
-                    ],
+                    command=["CMD", "ak", "healthcheck"],
                     interval=Duration.seconds(30),
                     timeout=Duration.seconds(5),
                     retries=3,
-                    start_period=Duration.seconds(60),
+                    start_period=Duration.seconds(300),
                 ),
             ),
         )

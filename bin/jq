@@ -1,0 +1,53 @@
+#!/usr/bin/env dotslash
+
+// jq 1.8.1 - https://github.com/jqlang/jq/releases/tag/jq-1.8.1
+// Raw binaries (no archive). path is the cache filename dotslash writes.
+{
+  "name": "jq",
+  "platforms": {
+    "macos-aarch64": {
+      "size": 841408,
+      "hash": "blake3",
+      "digest": "d7f94364d8375d9004ac8169fdbb665f61360c2bcc7cceed1d7306dc6f8958b7",
+      "path": "jq",
+      "providers": [
+        {
+          "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+        }
+      ]
+    },
+    "macos-x86_64": {
+      "size": 855272,
+      "hash": "blake3",
+      "digest": "b18ab7e2df18b61ef0df3f28f198506fd7782a793ff9c0a850ef53001c791a20",
+      "path": "jq",
+      "providers": [
+        {
+          "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64"
+        }
+      ]
+    },
+    "linux-aarch64": {
+      "size": 1797872,
+      "hash": "blake3",
+      "digest": "4786647126a7ae8f1125c915e5e9460f5ce16c55c3b42100794e7971084fd805",
+      "path": "jq",
+      "providers": [
+        {
+          "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-arm64"
+        }
+      ]
+    },
+    "linux-x86_64": {
+      "size": 2255816,
+      "hash": "blake3",
+      "digest": "b0419e57743765a9682d7924816269862890716d7bd3c1b78b2a3dd1f311a7f9",
+      "path": "jq",
+      "providers": [
+        {
+          "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
+        }
+      ]
+    }
+  }
+}
