@@ -107,6 +107,10 @@ class AuthentikStack(Stack):
             "AUTHENTIK_POSTGRESQL__HOST": database.instance.db_instance_endpoint_address,
             "AUTHENTIK_POSTGRESQL__NAME": cfg.db.name,
             "AUTHENTIK_POSTGRESQL__PORT": str(AUTHENTIK_DB_PORT),
+            # NOTE: Without this setting, the stack will never reach a healthy
+            # deployed state. The server and worker containers will endlessly
+            # fail to connect to the database and restart.
+            "AUTHENTIK_POSTGRESQL__SSLMODE": "require",
             "AUTHENTIK_STORAGE__BACKEND": "s3",
             "AUTHENTIK_STORAGE__S3__BUCKET_NAME": bucket.bucket_name,
             "AUTHENTIK_STORAGE__S3__REGION": Aws.REGION,
@@ -207,6 +211,7 @@ class AuthentikStack(Stack):
             port=AUTHENTIK_HTTP_PORT,
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[server_service.service],
+            deregistration_delay=Duration.seconds(30),
             health_check=elbv2.HealthCheck(
                 path=health_check_path,
                 healthy_http_codes="200",

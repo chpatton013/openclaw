@@ -188,7 +188,10 @@ def main() -> int:
             "write-secret authentik/secret-key",
         )
 
-    authentik_bootstrap_template = {"email": inputs.authentik_bootstrap_email}
+    authentik_bootstrap_template = {
+        "email": inputs.authentik_bootstrap_email,
+        "username": "akadmin",
+    }
     if inputs.authentik_bootstrap_password is not None:
         run(
             write_secret_cmd(
