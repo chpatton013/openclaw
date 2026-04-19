@@ -158,15 +158,7 @@ class AuthentikStack(Stack):
                 ],
                 command=["server"],
                 environment=common_env,
-                secrets={
-                    **common_secrets,
-                    "AUTHENTIK_BOOTSTRAP_EMAIL": ecs.Secret.from_secrets_manager(
-                        bootstrap_secret, "email"
-                    ),
-                    "AUTHENTIK_BOOTSTRAP_PASSWORD": ecs.Secret.from_secrets_manager(
-                        bootstrap_secret, "password"
-                    ),
-                },
+                secrets=common_secrets,
                 health_check=ecs.HealthCheck(
                     command=["CMD", "ak", "healthcheck"],
                     interval=Duration.seconds(30),
@@ -190,7 +182,15 @@ class AuthentikStack(Stack):
                 image=app_image,
                 command=["worker"],
                 environment=common_env,
-                secrets=common_secrets,
+                secrets={
+                    **common_secrets,
+                    "AUTHENTIK_BOOTSTRAP_EMAIL": ecs.Secret.from_secrets_manager(
+                        bootstrap_secret, "email"
+                    ),
+                    "AUTHENTIK_BOOTSTRAP_PASSWORD": ecs.Secret.from_secrets_manager(
+                        bootstrap_secret, "password"
+                    ),
+                },
             ),
         )
 
