@@ -46,9 +46,9 @@ class AuthentikSmtpConfig:
     def load(cls, data: dict[str, Any]) -> Self:
         return cls(
             host=data["host"],
-            port=data["port"],
-            use_ssl=data["use_ssl"],
-            use_tls=data["use_tls"],
+            port=data.get("port", 587),
+            use_ssl=data.get("use_ssl", False),
+            use_tls=data.get("use_tls", True),
             from_email_address=data["from_email_address"],
         )
 

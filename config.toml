@@ -28,7 +28,4 @@ min_healthy_percent = 100
 
 [authentik.smtp]
 host = "smtp.chiiiirs.com"
-port = 587
-use_ssl = false
-use_tls = true
 from_email_address = "authentik@chiiiirs.com"
