@@ -1,7 +1,9 @@
-tailscale_admin_email = "admin@chiiiirs.com"
-
 [foundation]
 root_domain = "chiiiirs.com"
+
+[webfinger]
+subject = "acct:tailscale@chiiiirs.com"
+oidc_issuer_url = "https://auth.chiiiirs.com/application/o/tailscale/"
 
 [authentik]
 subdomain = "auth"

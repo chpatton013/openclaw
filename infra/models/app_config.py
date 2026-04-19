@@ -5,20 +5,21 @@ from typing import Any, Self
 
 from .authentik_config import AuthentikConfig
 from .foundation_config import FoundationConfig
+from .webfinger_config import WebFingerConfig
 
 
 @dataclass(frozen=True)
 class AppConfig:
-    tailscale_admin_email: str
     foundation: FoundationConfig
     authentik: AuthentikConfig
+    webfinger: WebFingerConfig
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
         return cls(
-            tailscale_admin_email=data["tailscale_admin_email"],
             foundation=FoundationConfig.load(data["foundation"]),
             authentik=AuthentikConfig.load(data["authentik"]),
+            webfinger=WebFingerConfig.load(data["webfinger"]),
         )
 
 

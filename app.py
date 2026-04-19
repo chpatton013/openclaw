@@ -8,6 +8,7 @@ from infra.models.app_config import load_config
 from infra.stacks.authentik_stack import AuthentikStack
 from infra.stacks.foundation_stack import FoundationStack
 from infra.stacks.openclaw_stack import OpenClawStack
+from infra.stacks.webfinger_stack import WebFingerStack
 
 app = cdk.App()
 
@@ -18,6 +19,7 @@ env = env = cdk.Environment(
 
 shared = FoundationStack(app, "FoundationStack", cfg=cfg.foundation, env=env).exports
 AuthentikStack(app, "AuthentikStack", cfg=cfg.authentik, shared=shared, env=env)
+WebFingerStack(app, "WebFingerStack", cfg=cfg.webfinger, shared=shared, env=env)
 OpenClawStack(app, "OpenClawStack", env=env)
 
 app.synth()
