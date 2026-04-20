@@ -1,0 +1,37 @@
+version: 1
+metadata:
+  name: Tailscale OIDC application
+entries:
+  - model: authentik_core.group
+    identifiers:
+      name: tailscale
+  - model: authentik_providers_oauth2.oauth2provider
+    id: tailscale-provider
+    identifiers:
+      name: tailscale
+    attrs:
+      client_type: confidential
+      client_id: !Env AK_BP_TAILSCALE_CLIENT_ID
+      client_secret: !Env AK_BP_TAILSCALE_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          url: !Env AK_BP_TAILSCALE_REDIRECT_URI
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+  - model: authentik_core.application
+    identifiers:
+      slug: tailscale
+    attrs:
+      name: Tailscale
+      provider: !KeyOf tailscale-provider
+      policy_engine_mode: any
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !Find [authentik_core.application, [slug, tailscale]]
+      group: !Find [authentik_core.group, [name, tailscale]]
+    attrs:
+      order: 0

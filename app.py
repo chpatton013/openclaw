@@ -26,6 +26,8 @@ env = cdk.Environment(
 authentik_issuer_base = (
     f"https://{cfg.authentik.subdomain}.{cfg.foundation.public_domain}/application/o"
 )
+headscale_fqdn = f"{cfg.headscale.headscale_subdomain}.{cfg.foundation.public_domain}"
+headplane_fqdn = f"{cfg.headscale.headplane_subdomain}.{cfg.foundation.public_domain}"
 
 shared = FoundationStack(
     app,
@@ -47,7 +49,15 @@ data = DataStack(
 AuthentikStack(
     app,
     "AuthentikStack",
-    imports=AuthentikImports(cfg=cfg.authentik, shared=shared, data=data),
+    imports=AuthentikImports(
+        cfg=cfg.authentik,
+        shared=shared,
+        data=data,
+        assets=assets,
+        tailscale_redirect_uri="https://login.tailscale.com/a/oauth_response",
+        headscale_redirect_uri=f"https://{headscale_fqdn}/oidc/callback",
+        headplane_redirect_uri=f"https://{headplane_fqdn}/oidc/callback",
+    ),
     env=env,
 )
 WebFingerStack(

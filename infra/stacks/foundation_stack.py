@@ -1,15 +1,21 @@
 from dataclasses import dataclass
 
 from aws_cdk import (
+    Aws,
     Stack,
     aws_ec2 as ec2,
+    aws_ecr as ecr,
     aws_ecs as ecs,
     aws_route53 as route53,
+    aws_secretsmanager as secretsmanager,
 )
 from constructs import Construct
 
 from ..models.foundation_config import FoundationConfig
 from ..models.foundation_exports import FoundationExports
+
+GHCR_MIRROR_NAMESPACE = "ghcr"
+GHCR_CREDENTIAL_SECRET_NAME = "ecr-pullthroughcache/ghcr"
 
 
 @dataclass(frozen=True)
@@ -67,6 +73,22 @@ class FoundationStack(Stack):
 
         cluster = ecs.Cluster(self, "Cluster", vpc=vpc)
 
+        ghcr_credential_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "GhcrCredentialSecret", GHCR_CREDENTIAL_SECRET_NAME
+        )
+        ecr.CfnPullThroughCacheRule(
+            self,
+            "GhcrPullThroughCacheRule",
+            ecr_repository_prefix=GHCR_MIRROR_NAMESPACE,
+            upstream_registry_url="ghcr.io",
+            upstream_registry="github-container-registry",
+            credential_arn=ghcr_credential_secret.secret_arn,
+        )
+        ghcr_mirror_base = (
+            f"{Aws.ACCOUNT_ID}.dkr.ecr.{Aws.REGION}.amazonaws.com/"
+            f"{GHCR_MIRROR_NAMESPACE}"
+        )
+
         self.exports = FoundationExports(
             public_domain=cfg.public_domain,
             public_zone=public_zone,
@@ -74,4 +96,6 @@ class FoundationStack(Stack):
             private_zone=private_zone,
             vpc=vpc,
             cluster=cluster,
+            ghcr_mirror_base=ghcr_mirror_base,
+            ghcr_mirror_namespace=GHCR_MIRROR_NAMESPACE,
         )

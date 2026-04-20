@@ -10,12 +10,14 @@ from aws_cdk import (
     aws_elasticloadbalancingv2 as elbv2,
     aws_iam as iam,
     aws_s3 as s3,
+    aws_s3_deployment as s3deploy,
     aws_secretsmanager as secretsmanager,
 )
 from constructs import Construct
 
 from ..constructs.fargate_service import PrivateEgressFargateService
 from ..constructs.public_http_alb import PublicHttpAlb
+from ..models.asset_loader import AssetLoader
 from ..models.authentik_config import AuthentikConfig
 from ..models.data_exports import DataExports
 from ..models.foundation_exports import FoundationExports
@@ -26,9 +28,15 @@ class AuthentikImports:
     cfg: AuthentikConfig
     shared: FoundationExports
     data: DataExports
+    assets: AssetLoader
+    tailscale_redirect_uri: str
+    headscale_redirect_uri: str
+    headplane_redirect_uri: str
 
 
 AUTHENTIK_HTTP_PORT = 9000
+BLUEPRINTS_VOLUME = "authentik-blueprints"
+BLUEPRINTS_MOUNT_PATH = "/blueprints/custom"
 PRIVATE_CIDRS = [
     "10.0.0.0/8",
     "172.16.0.0/12",
@@ -50,6 +58,7 @@ class AuthentikStack(Stack):
         cfg = imports.cfg
         shared = imports.shared
         data = imports.data
+        assets = imports.assets
 
         ###
         # Secrets
@@ -66,6 +75,15 @@ class AuthentikStack(Stack):
         db_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "DbSecret", cfg.db.secret_name
         )
+        tailscale_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "TailscaleOidcSecret", "authentik/oidc/tailscale"
+        )
+        headscale_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "HeadscaleOidcSecret", "authentik/oidc/headscale"
+        )
+        headplane_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "HeadplaneOidcSecret", "authentik/oidc/headplane"
+        )
 
         ###
         # Storage
@@ -79,6 +97,23 @@ class AuthentikStack(Stack):
             enforce_ssl=True,
             removal_policy=RemovalPolicy.RETAIN,
             auto_delete_objects=False,
+        )
+
+        blueprints_bucket = s3.Bucket(
+            self,
+            "BlueprintsBucket",
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            enforce_ssl=True,
+            removal_policy=RemovalPolicy.RETAIN,
+            auto_delete_objects=False,
+        )
+        s3deploy.BucketDeployment(
+            self,
+            "BlueprintsDeployment",
+            sources=[s3deploy.Source.asset(str(assets.blueprints_path("authentik")))],
+            destination_bucket=blueprints_bucket,
+            prune=True,
         )
 
         ###
@@ -103,6 +138,9 @@ class AuthentikStack(Stack):
             "AUTHENTIK_STORAGE__S3__BUCKET_NAME": bucket.bucket_name,
             "AUTHENTIK_STORAGE__S3__REGION": Aws.REGION,
             "AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS": ",".join(PRIVATE_CIDRS),
+            "AK_BP_TAILSCALE_REDIRECT_URI": imports.tailscale_redirect_uri,
+            "AK_BP_HEADSCALE_REDIRECT_URI": imports.headscale_redirect_uri,
+            "AK_BP_HEADPLANE_REDIRECT_URI": imports.headplane_redirect_uri,
         }
 
         common_secrets = {
@@ -119,10 +157,28 @@ class AuthentikStack(Stack):
                 db_secret, "username"
             ),
             "AUTHENTIK_SECRET_KEY": ecs.Secret.from_secrets_manager(secret_key),
+            "AK_BP_TAILSCALE_CLIENT_ID": ecs.Secret.from_secrets_manager(
+                tailscale_oidc_secret, "client_id"
+            ),
+            "AK_BP_TAILSCALE_CLIENT_SECRET": ecs.Secret.from_secrets_manager(
+                tailscale_oidc_secret, "client_secret"
+            ),
+            "AK_BP_HEADSCALE_CLIENT_ID": ecs.Secret.from_secrets_manager(
+                headscale_oidc_secret, "client_id"
+            ),
+            "AK_BP_HEADSCALE_CLIENT_SECRET": ecs.Secret.from_secrets_manager(
+                headscale_oidc_secret, "client_secret"
+            ),
+            "AK_BP_HEADPLANE_CLIENT_ID": ecs.Secret.from_secrets_manager(
+                headplane_oidc_secret, "client_id"
+            ),
+            "AK_BP_HEADPLANE_CLIENT_SECRET": ecs.Secret.from_secrets_manager(
+                headplane_oidc_secret, "client_secret"
+            ),
         }
 
         app_image = ecs.ContainerImage.from_registry(
-            f"ghcr.io/goauthentik/server:{cfg.image_version}"
+            f"{shared.ghcr_mirror_base}/goauthentik/server:{cfg.image_version}"
         )
         health_check_path = "/-/health/live/"
 
@@ -181,6 +237,57 @@ class AuthentikStack(Stack):
                 },
             ),
         )
+
+        server_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
+        worker_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
+
+        for svc, init_prefix in [
+            (server_service, "authentik-server-blueprints-init"),
+            (worker_service, "authentik-worker-blueprints-init"),
+        ]:
+            svc.task_defn.add_volume(name=BLUEPRINTS_VOLUME)
+            svc.container.add_mount_points(
+                ecs.MountPoint(
+                    container_path=BLUEPRINTS_MOUNT_PATH,
+                    source_volume=BLUEPRINTS_VOLUME,
+                    read_only=True,
+                )
+            )
+            blueprints_init = svc.task_defn.add_container(
+                "BlueprintsInit",
+                image=ecs.ContainerImage.from_registry(
+                    "public.ecr.aws/aws-cli/aws-cli:latest"
+                ),
+                essential=False,
+                entry_point=["sh", "-c"],
+                command=[
+                    "; ".join(
+                        [
+                            "set -eu",
+                            f'aws s3 sync "s3://${{BLUEPRINTS_BUCKET}}/" "{BLUEPRINTS_MOUNT_PATH}/"',
+                        ]
+                    )
+                ],
+                environment={"BLUEPRINTS_BUCKET": blueprints_bucket.bucket_name},
+                logging=ecs.LogDrivers.aws_logs(
+                    stream_prefix=init_prefix,
+                    log_group=svc.log_group,
+                ),
+            )
+            blueprints_init.add_mount_points(
+                ecs.MountPoint(
+                    container_path=BLUEPRINTS_MOUNT_PATH,
+                    source_volume=BLUEPRINTS_VOLUME,
+                    read_only=False,
+                )
+            )
+            svc.container.add_container_dependencies(
+                ecs.ContainerDependency(
+                    container=blueprints_init,
+                    condition=ecs.ContainerDependencyCondition.SUCCESS,
+                )
+            )
+            blueprints_bucket.grant_read(svc.task_defn.task_role)
 
         alb = PublicHttpAlb(
             self,

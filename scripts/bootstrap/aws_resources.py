@@ -2,8 +2,11 @@ import argparse
 import getpass
 import json
 import pathlib
+import secrets
+import string
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 
 
@@ -22,6 +25,7 @@ HERE = pathlib.Path(__file__).parent
 REPO_ROOT = find_repo_root(HERE)
 BIN_DIR = REPO_ROOT / "bin"
 CONFIG_PATH = REPO_ROOT / "config.toml"
+AUTHENTIK_SECRETS_PATH = REPO_ROOT / "secrets" / "authentik.toml"
 CREATE_HOSTED_ZONE = BIN_DIR / "aws-create-hosted-zone"
 WRITE_SECRET = BIN_DIR / "aws-write-secret"
 
@@ -66,6 +70,8 @@ def prompt_password_or_default(label: str) -> str | None:
 class Inputs:
     public_domain: str
     private_domain: str
+    ghcr_username: str
+    ghcr_access_token: str
     data_database_username: str
     data_database_password: str | None
     authentik_secret_key: str | None
@@ -73,15 +79,20 @@ class Inputs:
     authentik_bootstrap_password: str | None
     authentik_smtp_username: str
     authentik_smtp_password: str | None
-    headscale_oidc_client_id: str | None
-    headscale_oidc_client_secret: str | None
-    headplane_oidc_client_id: str | None
-    headplane_oidc_client_secret: str | None
+    tailscale_oidc_client_id: str
+    tailscale_oidc_client_secret: str
 
 
 def collect_inputs(
     args: argparse.Namespace, public_domain: str, private_domain: str
 ) -> Inputs:
+    ghcr_username = resolve_arg(args.ghcr_username) or prompt_required(
+        "GitHub username (for ghcr.io pull-through cache)"
+    )
+    ghcr_access_token = resolve_arg(args.ghcr_access_token) or getpass.getpass(
+        "GitHub PAT with read:packages scope: "
+    )
+
     data_database_username = resolve_arg(
         args.data_database_username
     ) or prompt_required("Data database master username", default="postgres")
@@ -114,14 +125,16 @@ def collect_inputs(
     if args.authentik_smtp_password is None:
         authentik_smtp_password = prompt_password_or_default("Authentik SMTP password")
 
-    headscale_oidc_client_id = resolve_arg(args.headscale_oidc_client_id)
-    headscale_oidc_client_secret = resolve_arg(args.headscale_oidc_client_secret)
-    headplane_oidc_client_id = resolve_arg(args.headplane_oidc_client_id)
-    headplane_oidc_client_secret = resolve_arg(args.headplane_oidc_client_secret)
+    with open(AUTHENTIK_SECRETS_PATH, "rb") as f:
+        authentik_secrets = tomllib.load(f)
+    tailscale_oidc_client_id = authentik_secrets["tailscale"]["client_id"]
+    tailscale_oidc_client_secret = authentik_secrets["tailscale"]["client_secret"]
 
     return Inputs(
         public_domain=public_domain,
         private_domain=private_domain,
+        ghcr_username=ghcr_username,
+        ghcr_access_token=ghcr_access_token,
         data_database_username=data_database_username,
         data_database_password=data_database_password,
         authentik_secret_key=authentik_secret_key,
@@ -129,10 +142,8 @@ def collect_inputs(
         authentik_bootstrap_password=authentik_bootstrap_password,
         authentik_smtp_username=authentik_smtp_username,
         authentik_smtp_password=authentik_smtp_password,
-        headscale_oidc_client_id=headscale_oidc_client_id,
-        headscale_oidc_client_secret=headscale_oidc_client_secret,
-        headplane_oidc_client_id=headplane_oidc_client_id,
-        headplane_oidc_client_secret=headplane_oidc_client_secret,
+        tailscale_oidc_client_id=tailscale_oidc_client_id,
+        tailscale_oidc_client_secret=tailscale_oidc_client_secret,
     )
 
 
@@ -180,6 +191,8 @@ def main() -> int:
             "from the named file."
         )
     )
+    parser.add_argument("--ghcr-username")
+    parser.add_argument("--ghcr-access-token")
     parser.add_argument("--data-database-username")
     parser.add_argument("--data-database-password")
     parser.add_argument("--authentik-secret-key")
@@ -187,10 +200,6 @@ def main() -> int:
     parser.add_argument("--authentik-bootstrap-password")
     parser.add_argument("--authentik-smtp-username")
     parser.add_argument("--authentik-smtp-password")
-    parser.add_argument("--headscale-oidc-client-id")
-    parser.add_argument("--headscale-oidc-client-secret")
-    parser.add_argument("--headplane-oidc-client-id")
-    parser.add_argument("--headplane-oidc-client-secret")
     args = parser.parse_args()
 
     cfg = load_config(CONFIG_PATH)
@@ -207,6 +216,17 @@ def main() -> int:
     run(
         [str(CREATE_HOSTED_ZONE), inputs.private_domain],
         "create-hosted-zone (private)",
+    )
+
+    run(
+        write_secret_cmd(
+            "ecr-pullthroughcache/ghcr",
+            template={"username": inputs.ghcr_username},
+            key="accessToken",
+            use_stdin=True,
+        ),
+        "write-secret ecr-pullthroughcache/ghcr",
+        stdin_value=inputs.ghcr_access_token,
     )
 
     data_database_template = {"username": inputs.data_database_username}
@@ -298,31 +318,31 @@ def main() -> int:
             "write-secret authentik/smtp",
         )
 
-    headscale_oidc_template = {"client_id": inputs.headscale_oidc_client_id or ""}
-    headscale_oidc_value = inputs.headscale_oidc_client_secret or ""
     run(
         write_secret_cmd(
-            "headscale/oidc",
-            template=headscale_oidc_template,
+            "authentik/oidc/tailscale",
+            template={"client_id": inputs.tailscale_oidc_client_id},
             key="client_secret",
             use_stdin=True,
         ),
-        "write-secret headscale/oidc",
-        stdin_value=headscale_oidc_value,
+        "write-secret authentik/oidc/tailscale",
+        stdin_value=inputs.tailscale_oidc_client_secret,
     )
 
-    headplane_oidc_template = {"client_id": inputs.headplane_oidc_client_id or ""}
-    headplane_oidc_value = inputs.headplane_oidc_client_secret or ""
-    run(
-        write_secret_cmd(
-            "headplane/oidc",
-            template=headplane_oidc_template,
-            key="client_secret",
-            use_stdin=True,
-        ),
-        "write-secret headplane/oidc",
-        stdin_value=headplane_oidc_value,
-    )
+    alphabet = string.ascii_letters + string.digits
+    for slug in ("headscale", "headplane"):
+        secret_name = f"authentik/oidc/{slug}"
+        payload = json.dumps(
+            {
+                "client_id": "".join(secrets.choice(alphabet) for _ in range(40)),
+                "client_secret": "".join(secrets.choice(alphabet) for _ in range(128)),
+            }
+        )
+        run(
+            write_secret_cmd(secret_name, use_stdin=True),
+            f"write-secret {secret_name}",
+            stdin_value=payload,
+        )
 
     run(
         write_secret_cmd("headplane/cookie-secret", bytes_=32),

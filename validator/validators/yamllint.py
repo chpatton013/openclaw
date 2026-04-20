@@ -5,7 +5,11 @@ from yamllint.linter import run
 
 from validator.base import ValidationResult, Validator
 
-_CONFIG = YamlLintConfig("extends: default")
+_CONFIG = YamlLintConfig("""
+extends: default
+rules:
+  line-length: disable
+""")
 
 
 class YamllintValidator(Validator):

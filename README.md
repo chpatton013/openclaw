@@ -69,62 +69,35 @@ specific stacks, as needed. `--require-approval` can be omitted if you aren't
 running with any concurrency.
 
 ## Post-Deploy Setup
+
+The Tailscale, Headscale, and Headplane OIDC applications are provisioned
+automatically by Authentik blueprints in
+[`assets/authentik/blueprints/`](./assets/authentik/blueprints/), synced to
+each Authentik task from S3 by an init container on every deploy. The only
+remaining manual steps are user/group membership and the Tailscale SaaS-side
+registration.
+
 - Authentik
     - Directory > Users > New Service Account
         - Set name to `tailscale`
         - Enable "Create Group" and "Expiring"
         - Create Service Account
         - Copy the password for later
-    - Directory > Groups > Users > Add existing user
-        - Select `akadmin` and `tailscale`
-        - Confirm
-        - Assign
-    - Applications > Applications > Create with Provider
-        - Application
-            - Set application name to `Tailscale`, and slug to `tailscale`
-        - Choose a Provider
-            - Set provider type to "OAuth2/OpenID Provider"
-        - Configure Provider
-            - Set Authorization flow to "default-authorization-provider-implicit-consent"
-            - Set Protocol settings > Client type to "Confidential"
-            - Copy the Client ID and Client Secret for later
-            - Add a new Redirect URI (strict) for "https://login.tailscale.com/a/oauth_response"
-            - Ensure Advanced protocol settings contains `email`, `openid`, and `profile`
-        - Configure Bindings
-            - Bind existing policy/group/user
-                - Group > tailscale
-                - Set Order to 0
-            - Next
-        - Review and Submit Application
-            - Submit
-- Tailscale
+    - Directory > Groups > `tailscale` > Users > Add existing user
+        - Select `akadmin` and the `tailscale` service account
+        - Confirm and Assign
+- Tailscale (SaaS-side)
     - Create a new account with OIDC provider
         - Email address: tailscale@chiiiirs.com
         - WebFinger URL (automatically populated to https://chiiiirs.com/.well-known/webfinger)
         - Which identity provider: Authentik
         - Get OIDC issuer
-        - Copy/paste Client ID and Client Secret
+        - Client ID / Client Secret: use the values in `secrets/authentik.toml`
+          (also stored in `authentik/oidc/tailscale`)
         - Prompts: consent
         - Sign up with OIDC
     - Authentik redirecting to Tailscale
         - Continue
-- Headscale (Authentik OIDC app)
-    - Applications > Applications > Create with Provider
-        - Application: name `Headscale`, slug `headscale`
-        - Provider type: OAuth2/OpenID Provider
-        - Authorization flow: `default-authorization-provider-implicit-consent`
-        - Client type: Confidential
-        - Redirect URI (strict): `https://headscale.<public_domain>/oidc/callback`
-        - Scopes: `openid`, `profile`, `email`
-        - Copy Client ID + Client Secret → `headscale/oidc` secret
-- Headplane (Authentik OIDC app)
-    - Applications > Applications > Create with Provider
-        - Application: name `Headplane`, slug `headplane`
-        - Provider type: OAuth2/OpenID Provider
-        - Client type: Confidential
-        - Redirect URI (strict): `https://headplane.<public_domain>/oidc/callback`
-        - Scopes: `openid`, `profile`, `email`
-        - Copy Client ID + Client Secret → `headplane/oidc` secret
 - `chiiiirs.net` registrar
     - After the `chiiiirs.net` hosted zone is created, copy its 4 NS records
       from Route53 into the registrar DNS config so that MagicDNS under
@@ -151,12 +124,18 @@ script for each step, or take matters into your own hands.
     - AWS console
         - TODO
     - Helper script
+        - `bin/aws-write-secret ecr-pullthroughcache/ghcr --template='{"username":"GITHUB_USERNAME"}' --key=accessToken  # GitHub PAT with read:packages scope`
         - `bin/aws-write-secret authentik/secret-key --length=50 --exclude-punctuation`
         - `bin/aws-write-secret authentik/bootstrap --template='{"email":"EMAIL"}' --key=password`
         - `bin/aws-write-secret data/database --template='{"username":"USERNAME"}' --key=password`
         - `bin/aws-write-secret authentik/smtp --template='{"username":"USERNAME"}' --key=password`
-        - `bin/aws-write-secret headscale/oidc --template='{"client_id":"CLIENT_ID"}' --key=client_secret`
-        - `bin/aws-write-secret headplane/oidc --template='{"client_id":"CLIENT_ID"}' --key=client_secret`
+        - `bin/aws-write-secret authentik/oidc/tailscale --template='{"client_id":"CLIENT_ID"}' --key=client_secret`
+          (values from `secrets/authentik.toml`)
+        - `bin/aws-write-secret authentik/oidc/headscale -`
+          (JSON blob: `{"client_id":"...","client_secret":"..."}` — blueprint
+          seeds both into Authentik on first apply)
+        - `bin/aws-write-secret authentik/oidc/headplane -`
+          (same shape as headscale)
         - `bin/aws-write-secret headscale/noise-private-key --bytes=32`
         - `bin/aws-write-secret headplane/cookie-secret --bytes=32`
         - `bin/aws-write-secret headscale/admin-api-key -  # empty placeholder; populated by HeadscaleStack`
@@ -280,15 +259,44 @@ DAG. But they can never declare a cyclical dependency.
     - Gitea or Forgejo
 
 - TODO:
-    - Use Authentik blueprints for tailscale and headscale applications instead
-      of manual setup through web UI. Note existing creds for tailscale in
-      secrets/authentik.toml. Update with any creds produced for headscale.
-    - Mirror upstream container images (authentik, headscale, headplane) into
-      ECR — simplest path is ECR pull-through cache rules for `ghcr.io`.
     - Per-service DB credentials instead of reusing the RDS master secret.
-      Extend `rds_logical_databases` Lambda to also provision a user + grants
-      per entry, backed by a per-service Secrets Manager secret.
-    - Automated credential rotation. Either Secrets Manager hosted rotation
-      (`HostedRotation.postgres_single_user`, requires restart-on-rotate for
-      services that cache creds) or IAM DB auth (ephemeral tokens, no
-      rotation needed, but service-side connect logic changes).
+        - **Today**: `data/database` is the RDS master credential. Authentik
+          and Headscale both connect as the master user — every logical DB is
+          accessed by a superuser, blast radius is total, and rotation couples
+          all services.
+        - **Design**: each service declares its own login in `DbConfig` (name
+          + secret_name, already plumbed). Extend the `rds_logical_databases`
+          init Lambda so each entry in `databases=[...]` becomes
+          `{name, user, secret_arn}`. On update the Lambda runs (as the
+          master) `CREATE DATABASE x; CREATE USER u WITH PASSWORD '...';
+          GRANT ALL ON DATABASE x TO u;` — reading the per-service password
+          from Secrets Manager.
+        - **Bootstrap**: add one `<service>/database` secret per service
+          (`authentik/database`, `headscale/database`), generated with
+          `bin/aws-write-secret --length=32`. Config points each service at
+          its own `secret_name`.
+        - **Master**: `data/database` stays, but is only read by the init
+          Lambda (and rotation). No service ever sees it again.
+    - Automated credential rotation. Two viable paths:
+        - **Secrets Manager hosted rotation**
+          (`secret.add_rotation_schedule(...,
+          hosted_rotation=secretsmanager.HostedRotation.postgres_single_user(
+          vpc=shared.vpc), automatically_after=Duration.days(30))`). AWS-managed
+          Lambda rotates the password in Postgres and writes the new value
+          back to the secret. Downside: services that read secrets at task
+          boot (all ECS tasks here) will keep the old password until redeploy
+          — wire an EventBridge rule on the rotation event to
+          `ecs:UpdateService --force-new-deployment` so tasks get recycled.
+          `multi_user` rotation avoids the restart but requires app-side
+          retry-on-auth-fail.
+        - **IAM DB auth**. Enable `iam_database_authentication` on the RDS
+          instance, grant task roles `rds-db:connect` on the specific DB
+          user ARN. Services request a 15-minute token from RDS at connect
+          time. No rotation needed because there's no long-lived password.
+          Downside: Authentik/Headscale don't natively fetch RDS auth
+          tokens — would need a sidecar (`pgbouncer` + token refresh) per
+          task. More moving parts.
+        - **Recommended order**: per-service users first, then hosted
+          rotation with force-new-deployment on rotation events. Defer IAM
+          DB auth until there's a real need — the sidecar cost outweighs
+          the rotation cost at single-digit-service scale.

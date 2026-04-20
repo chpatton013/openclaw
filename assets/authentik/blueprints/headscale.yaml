@@ -1,0 +1,28 @@
+version: 1
+metadata:
+  name: Headscale OIDC application
+entries:
+  - model: authentik_providers_oauth2.oauth2provider
+    id: headscale-provider
+    identifiers:
+      name: headscale
+    attrs:
+      client_type: confidential
+      client_id: !Env AK_BP_HEADSCALE_CLIENT_ID
+      client_secret: !Env AK_BP_HEADSCALE_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          url: !Env AK_BP_HEADSCALE_REDIRECT_URI
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+  - model: authentik_core.application
+    identifiers:
+      slug: headscale
+    attrs:
+      name: Headscale
+      provider: !KeyOf headscale-provider
+      policy_engine_mode: any

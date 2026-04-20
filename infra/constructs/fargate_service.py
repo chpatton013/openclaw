@@ -1,8 +1,10 @@
 from typing import Any
 
 from aws_cdk import (
+    Stack,
     aws_ec2 as ec2,
     aws_ecs as ecs,
+    aws_iam as iam,
     aws_logs as logs,
 )
 from constructs import Construct
@@ -56,4 +58,19 @@ class PrivateEgressFargateService(Construct):
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
+        )
+
+    def grant_pull_through_cache(self, namespace: str) -> None:
+        stack = Stack.of(self)
+        self.task_defn.obtain_execution_role().add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ecr:CreateRepository",
+                    "ecr:BatchImportUpstreamImage",
+                ],
+                resources=[
+                    f"arn:aws:ecr:{stack.region}:{stack.account}"
+                    f":repository/{namespace}/*"
+                ],
+            )
         )

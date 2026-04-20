@@ -15,3 +15,5 @@ class FoundationExports:
     private_zone: route53.IHostedZone
     vpc: ec2.IVpc
     cluster: ecs.ICluster
+    ghcr_mirror_base: str
+    ghcr_mirror_namespace: str

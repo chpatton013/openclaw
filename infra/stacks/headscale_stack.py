@@ -74,13 +74,13 @@ class HeadscaleStack(Stack):
             self, "NoiseKeySecret", "headscale/noise-private-key"
         )
         headscale_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
-            self, "HeadscaleOidcSecret", "headscale/oidc"
+            self, "HeadscaleOidcSecret", "authentik/oidc/headscale"
         )
         admin_api_key_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "AdminApiKeySecret", "headscale/admin-api-key"
         )
         headplane_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
-            self, "HeadplaneOidcSecret", "headplane/oidc"
+            self, "HeadplaneOidcSecret", "authentik/oidc/headplane"
         )
         headplane_cookie_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "HeadplaneCookieSecret", "headplane/cookie-secret"
@@ -151,7 +151,8 @@ class HeadscaleStack(Stack):
             cluster=shared.cluster,
             container_kwargs=dict(
                 image=ecs.ContainerImage.from_registry(
-                    f"ghcr.io/juanfont/headscale:{cfg.headscale_image_version}"
+                    f"{shared.ghcr_mirror_base}/juanfont/headscale"
+                    f":{cfg.headscale_image_version}"
                 ),
                 port_mappings=[
                     ecs.PortMapping(
@@ -214,6 +215,8 @@ class HeadscaleStack(Stack):
             )
         )
 
+        headscale_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
+
         headscale_service.service.enable_cloud_map(
             cloud_map_namespace=namespace,
             name=SERVICE_DISCOVERY_SERVICE,
@@ -260,7 +263,8 @@ class HeadscaleStack(Stack):
             cluster=shared.cluster,
             container_kwargs=dict(
                 image=ecs.ContainerImage.from_registry(
-                    f"ghcr.io/tale/headplane:{cfg.headplane_image_version}"
+                    f"{shared.ghcr_mirror_base}/tale/headplane"
+                    f":{cfg.headplane_image_version}"
                 ),
                 port_mappings=[
                     ecs.PortMapping(
@@ -272,6 +276,8 @@ class HeadscaleStack(Stack):
                 secrets=headplane_secrets,
             ),
         )
+
+        headplane_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
 
         ###
         # ALB and routing
