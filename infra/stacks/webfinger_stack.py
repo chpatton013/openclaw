@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import cast
 
 from aws_cdk import (
@@ -14,23 +15,33 @@ from ..models.foundation_exports import FoundationExports
 from ..models.webfinger_config import WebFingerConfig
 
 
+@dataclass(frozen=True)
+class WebFingerImports:
+    cfg: WebFingerConfig
+    shared: FoundationExports
+    authentik_issuer_base: str
+
+
 class WebFingerStack(Stack):
     def __init__(
         self,
         scope: Construct,
         construct_id: str,
         *,
-        cfg: WebFingerConfig,
-        shared: FoundationExports,
+        imports: WebFingerImports,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        cfg = imports.cfg
+        shared = imports.shared
+        authentik_issuer_base = imports.authentik_issuer_base
 
         webfinger = WebFingerApi(
             self,
             "Api",
             subject=cfg.subject,
-            oidc_issuer_url=cfg.oidc_issuer_url,
+            oidc_issuer_url=f"{authentik_issuer_base}/{cfg.oidc_issuer_application}/",
         )
 
         certificate = acm.Certificate(

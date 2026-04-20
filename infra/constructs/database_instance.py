@@ -16,12 +16,14 @@ class PrivateIsolatedDatabaseInstance(Construct):
         *,
         secret: secretsmanager.ISecret,
         vpc: ec2.IVpc,
+        port: int,
         instance_kwargs: dict[str, Any],
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         self.secret = secret
+        self.port = port
 
         self.security_group = ec2.SecurityGroup(
             self, "SecurityGroup", vpc=vpc, allow_all_outbound=True
@@ -36,5 +38,6 @@ class PrivateIsolatedDatabaseInstance(Construct):
                 subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
             ),
             security_groups=[self.security_group],
+            port=port,
             **instance_kwargs,
         )

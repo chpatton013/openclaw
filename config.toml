@@ -4,18 +4,22 @@ private_domain = "chiiiirs.net"
 
 [webfinger]
 subject = "acct:chris@chiiiirs.com"
-oidc_issuer_url = "https://auth.chiiiirs.com/application/o/tailscale/"
+oidc_issuer_application = "tailscale"
 
 [authentik]
 subdomain = "auth"
 image_version = "2026.2"
 
 [data]
+master_secret_name = "data/database"
+
+[data.instance]
 instance_type = "t4g.small"
 allocated_storage_gib = 20
 
 [authentik.db]
 name = "authentik"
+secret_name = "data/database"
 
 [authentik.server]
 cpu = 1024
@@ -34,15 +38,18 @@ host = "smtp.chiiiirs.com"
 from_email_address = "authentik@chiiiirs.com"
 
 [headscale]
-control_plane_subdomain = "headscale"
-admin_subdomain = "headplane"
-private_subdomain = "ts"
+headscale_subdomain = "headscale"
+headplane_subdomain = "headplane"
+dns_subdomain = "ts"
 headscale_image_version = "0.26.1"
 headplane_image_version = "0.6.1"
-oidc_issuer_url = "https://auth.chiiiirs.com/application/o/headscale/"
+oidc_issuer_application = "headscale"
+dns_nameservers = ["1.1.1.1", "9.9.9.9"]
+log_level = "info"
 
 [headscale.db]
 name = "headscale"
+secret_name = "data/database"
 
 [headscale.headscale]
 cpu = 512

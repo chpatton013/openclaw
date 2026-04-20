@@ -1,4 +1,4 @@
-import pathlib
+from dataclasses import dataclass
 from typing import cast
 
 from aws_cdk import (
@@ -19,21 +19,27 @@ from constructs import Construct
 
 from ..constructs.fargate_service import PrivateEgressFargateService
 from ..constructs.public_http_alb import PublicHttpAlb
+from ..models.asset_loader import AssetLoader
 from ..models.data_exports import DataExports
 from ..models.foundation_exports import FoundationExports
 from ..models.headscale_config import HeadscaleConfig
 
 HEADSCALE_HTTP_PORT = 8080
 HEADPLANE_HTTP_PORT = 3000
-DB_PORT = 5432
 SERVICE_DISCOVERY_NAMESPACE = "headscale.local"
 SERVICE_DISCOVERY_SERVICE = "headscale"
 NOISE_VOLUME = "headscale-state"
 NOISE_MOUNT_PATH = "/var/lib/headscale"
 NOISE_KEY_FILENAME = "noise_private.key"
 
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_API_KEY_ASSET = _REPO_ROOT / "scripts" / "cdk_assets" / "headscale_admin_api_key"
+
+@dataclass(frozen=True)
+class HeadscaleImports:
+    cfg: HeadscaleConfig
+    shared: FoundationExports
+    data: DataExports
+    assets: AssetLoader
+    authentik_issuer_base: str
 
 
 class HeadscaleStack(Stack):
@@ -42,16 +48,24 @@ class HeadscaleStack(Stack):
         scope: Construct,
         construct_id: str,
         *,
-        cfg: HeadscaleConfig,
-        shared: FoundationExports,
-        data: DataExports,
+        imports: HeadscaleImports,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        headscale_fqdn = f"{cfg.control_plane_subdomain}.{shared.public_domain}"
-        headplane_fqdn = f"{cfg.admin_subdomain}.{shared.public_domain}"
-        base_domain = f"{cfg.private_subdomain}.{shared.private_domain}"
+        cfg = imports.cfg
+        shared = imports.shared
+        data = imports.data
+        assets = imports.assets
+        authentik_issuer_base = imports.authentik_issuer_base
+
+        headscale_fqdn = f"{cfg.headscale_subdomain}.{shared.public_domain}"
+        headplane_fqdn = f"{cfg.headplane_subdomain}.{shared.public_domain}"
+        base_domain = f"{cfg.dns_subdomain}.{shared.private_domain}"
+        headscale_oidc_issuer = (
+            f"{authentik_issuer_base}/{cfg.oidc_issuer_application}/"
+        )
+        headplane_oidc_issuer = f"{authentik_issuer_base}/{cfg.headplane_subdomain}/"
 
         ###
         # Secrets
@@ -70,6 +84,9 @@ class HeadscaleStack(Stack):
         )
         headplane_cookie_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "HeadplaneCookieSecret", "headplane/cookie-secret"
+        )
+        db_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "DbSecret", cfg.db.secret_name
         )
 
         ###
@@ -91,28 +108,28 @@ class HeadscaleStack(Stack):
             "HEADSCALE_METRICS_LISTEN_ADDR": "127.0.0.1:9090",
             "HEADSCALE_GRPC_LISTEN_ADDR": "127.0.0.1:50443",
             "HEADSCALE_DATABASE_TYPE": "postgres",
-            "HEADSCALE_DATABASE_POSTGRES_HOST": data.instance.db_instance_endpoint_address,
-            "HEADSCALE_DATABASE_POSTGRES_PORT": str(DB_PORT),
+            "HEADSCALE_DATABASE_POSTGRES_HOST": data.database.instance.db_instance_endpoint_address,
+            "HEADSCALE_DATABASE_POSTGRES_PORT": str(data.database.port),
             "HEADSCALE_DATABASE_POSTGRES_NAME": cfg.db.name,
             "HEADSCALE_DATABASE_POSTGRES_SSL": "true",
             "HEADSCALE_DNS_BASE_DOMAIN": base_domain,
             "HEADSCALE_DNS_MAGIC_DNS": "true",
-            "HEADSCALE_DNS_NAMESERVERS_GLOBAL": "1.1.1.1,9.9.9.9",
+            "HEADSCALE_DNS_NAMESERVERS_GLOBAL": ",".join(cfg.dns_nameservers),
             "HEADSCALE_DERP_URLS": "https://controlplane.tailscale.com/derpmap/default",
             "HEADSCALE_DERP_SERVER_ENABLED": "false",
-            "HEADSCALE_OIDC_ISSUER": cfg.oidc_issuer_url,
+            "HEADSCALE_OIDC_ISSUER": headscale_oidc_issuer,
             "HEADSCALE_OIDC_SCOPES": "openid,profile,email",
-            "HEADSCALE_LOG_LEVEL": "info",
+            "HEADSCALE_LOG_LEVEL": cfg.log_level,
             "HEADSCALE_DISABLE_CHECK_UPDATES": "true",
             "HEADSCALE_NOISE_PRIVATE_KEY_PATH": f"{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}",
         }
 
         headscale_secrets = {
             "HEADSCALE_DATABASE_POSTGRES_USER": ecs.Secret.from_secrets_manager(
-                data.master_secret, "username"
+                db_secret, "username"
             ),
             "HEADSCALE_DATABASE_POSTGRES_PASS": ecs.Secret.from_secrets_manager(
-                data.master_secret, "password"
+                db_secret, "password"
             ),
             "HEADSCALE_OIDC_CLIENT_ID": ecs.Secret.from_secrets_manager(
                 headscale_oidc_secret, "client_id"
@@ -129,7 +146,7 @@ class HeadscaleStack(Stack):
             cpu=cfg.headscale.cpu,
             memory_limit_mib=cfg.headscale.memory_limit_mib,
             desired_count=cfg.headscale.desired_count,
-            min_healthy_percent=int(cfg.headscale.min_healthy_percent),
+            min_healthy_percent=cfg.headscale.min_healthy_percent,
             vpc=shared.vpc,
             cluster=shared.cluster,
             container_kwargs=dict(
@@ -213,9 +230,7 @@ class HeadscaleStack(Stack):
             "HEADPLANE_HEADSCALE_URL": (
                 f"http://{SERVICE_DISCOVERY_SERVICE}.{SERVICE_DISCOVERY_NAMESPACE}:{HEADSCALE_HTTP_PORT}"
             ),
-            "HEADPLANE_OIDC_ISSUER": (
-                cfg.oidc_issuer_url.replace("/headscale/", "/headplane/")
-            ),
+            "HEADPLANE_OIDC_ISSUER": headplane_oidc_issuer,
         }
 
         headplane_secrets = {
@@ -240,7 +255,7 @@ class HeadscaleStack(Stack):
             cpu=cfg.headplane.cpu,
             memory_limit_mib=cfg.headplane.memory_limit_mib,
             desired_count=cfg.headplane.desired_count,
-            min_healthy_percent=int(cfg.headplane.min_healthy_percent),
+            min_healthy_percent=cfg.headplane.min_healthy_percent,
             vpc=shared.vpc,
             cluster=shared.cluster,
             container_kwargs=dict(
@@ -265,7 +280,7 @@ class HeadscaleStack(Stack):
             self,
             "PublicHttpAlb",
             fqdn=headscale_fqdn,
-            a_record=cfg.control_plane_subdomain,
+            a_record=cfg.headscale_subdomain,
             zone=shared.public_zone,
             vpc=shared.vpc,
             additional_fqdns=[headplane_fqdn],
@@ -316,7 +331,9 @@ class HeadscaleStack(Stack):
             ec2.Port.tcp(HEADPLANE_HTTP_PORT),
             "ALB to Headplane HTTP",
         )
-        data.instance.connections.allow_default_port_from(headscale_service.service)
+        data.database.instance.connections.allow_default_port_from(
+            headscale_service.service
+        )
 
         ###
         # Admin API key custom resource
@@ -324,7 +341,7 @@ class HeadscaleStack(Stack):
         api_key_fn = lambda_python.PythonFunction(
             self,
             "AdminApiKeyFn",
-            entry=str(_API_KEY_ASSET),
+            entry=str(assets.lambda_path("headscale_admin_api_key")),
             runtime=lambda_.Runtime.PYTHON_3_12,
             index="index.py",
             handler="handler",
@@ -357,10 +374,7 @@ class HeadscaleStack(Stack):
                 actions=["iam:PassRole"],
                 resources=[
                     headscale_service.task_defn.task_role.role_arn,
-                    cast(
-                        iam.IRole,
-                        headscale_service.task_defn.execution_role,
-                    ).role_arn,
+                    headscale_service.task_defn.obtain_execution_role().role_arn,
                 ],
             )
         )

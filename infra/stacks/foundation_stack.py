@@ -1,18 +1,10 @@
 from dataclasses import dataclass
 
 from aws_cdk import (
-    Duration,
-    RemovalPolicy,
     Stack,
-    aws_certificatemanager as acm,
     aws_ec2 as ec2,
     aws_ecs as ecs,
-    aws_elasticloadbalancingv2 as elbv2,
-    aws_rds as rds,
     aws_route53 as route53,
-    aws_route53_targets as route53_targets,
-    aws_s3 as s3,
-    aws_secretsmanager as secretsmanager,
 )
 from constructs import Construct
 
@@ -20,11 +12,23 @@ from ..models.foundation_config import FoundationConfig
 from ..models.foundation_exports import FoundationExports
 
 
+@dataclass(frozen=True)
+class FoundationImports:
+    cfg: FoundationConfig
+
+
 class FoundationStack(Stack):
     def __init__(
-        self, scope: Construct, construct_id: str, *, cfg: FoundationConfig, **kwargs
+        self,
+        scope: Construct,
+        construct_id: str,
+        *,
+        imports: FoundationImports,
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        cfg = imports.cfg
 
         public_zone = route53.HostedZone.from_lookup(
             self,

@@ -279,37 +279,16 @@ DAG. But they can never declare a cyclical dependency.
     - ownCloud / NextCloud
     - Gitea or Forgejo
 
-- Qs:
-    - Why is noise private key exposed through an init container instead of
-      through the env-like secrets that were used for authentik?
-    - why is nouse ket b64 if we just decode it before writing?
-    - why does pyrightconfig.json ignore scripts/cdk_assets?
-    - scripts/cdk_assets/headscale_admin_api_key/index.py: why redirect to file
-      and immediately cat?
 - TODO:
-    - Authentik blueprint for tailscale
-    - Dedupe *TaskConfig classes into a shared FargateTaskConfig
-    - Add *Imports classes for each stack that takes any inputs, so we don't
-      have to thread in shared and data as separate arguments. Do the O(n)
-      arg-passing with a single dataclass.
-    - Check if we need to do anything with db username/password setup. Don't
-      want the authentik user to be authing for every separate database. Might
-      mean multiple secrets, so DataStack will have to be informed about each of
-      them somehow. why is there a master_secret
-    - Make ECRs for each image we need?
-    - Update AuthentikDbConfig to be a generic DB config; take name of secret as
-      input
-    - update DataConfig to have a DbInstance config
-    - rename HeadscaleConfig props
-        - control_plane_subdomain->headscale_subdomain
-        - admin_subdomain->headplane_subdomain
-        - private_subdomain->dns_subdomain
-    - DataExports.instance -> DataExports.database.instance
-    - DB_PORT to come from config
-    - lambda source to come from new dir
-    - asset loader lib in models
-    - HEADSCALE_DNS_NAMESERVERS_GLOBAL, HEADSCALE_LOG_LEVEL from config
-    - min_healthy_percent should be int
-    - creds rotation
-    - oidc_issuer_url to oidc_issuer_application
-    - can we get rid of uses of cast
+    - Use Authentik blueprints for tailscale and headscale applications instead
+      of manual setup through web UI. Note existing creds for tailscale in
+      secrets/authentik.toml. Update with any creds produced for headscale.
+    - Mirror upstream container images (authentik, headscale, headplane) into
+      ECR — simplest path is ECR pull-through cache rules for `ghcr.io`.
+    - Per-service DB credentials instead of reusing the RDS master secret.
+      Extend `rds_logical_databases` Lambda to also provision a user + grants
+      per entry, backed by a per-service Secrets Manager secret.
+    - Automated credential rotation. Either Secrets Manager hosted rotation
+      (`HostedRotation.postgres_single_user`, requires restart-on-rotate for
+      services that cache creds) or IAM DB auth (ephemeral tokens, no
+      rotation needed, but service-side connect logic changes).

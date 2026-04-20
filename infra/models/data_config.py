@@ -1,15 +1,17 @@
 from dataclasses import dataclass
 from typing import Any, Self
 
+from .db_instance_config import DbInstanceConfig
+
 
 @dataclass(frozen=True)
 class DataConfig:
-    instance_type: str
-    allocated_storage_gib: int
+    instance: DbInstanceConfig
+    master_secret_name: str
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
         return cls(
-            instance_type=data["instance_type"],
-            allocated_storage_gib=data["allocated_storage_gib"],
+            instance=DbInstanceConfig.load(data["instance"]),
+            master_secret_name=data["master_secret_name"],
         )

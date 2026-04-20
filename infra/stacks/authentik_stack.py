@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from aws_cdk import (
     Aws,
     Duration,
@@ -18,8 +20,15 @@ from ..models.authentik_config import AuthentikConfig
 from ..models.data_exports import DataExports
 from ..models.foundation_exports import FoundationExports
 
+
+@dataclass(frozen=True)
+class AuthentikImports:
+    cfg: AuthentikConfig
+    shared: FoundationExports
+    data: DataExports
+
+
 AUTHENTIK_HTTP_PORT = 9000
-AUTHENTIK_DB_PORT = 5432
 PRIVATE_CIDRS = [
     "10.0.0.0/8",
     "172.16.0.0/12",
@@ -33,12 +42,14 @@ class AuthentikStack(Stack):
         scope: Construct,
         construct_id: str,
         *,
-        cfg: AuthentikConfig,
-        shared: FoundationExports,
-        data: DataExports,
+        imports: AuthentikImports,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        cfg = imports.cfg
+        shared = imports.shared
+        data = imports.data
 
         ###
         # Secrets
@@ -51,6 +62,9 @@ class AuthentikStack(Stack):
         )
         smtp_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "SmtpSecret", "authentik/smtp"
+        )
+        db_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "DbSecret", cfg.db.secret_name
         )
 
         ###
@@ -78,9 +92,9 @@ class AuthentikStack(Stack):
             "AUTHENTIK_EMAIL__USE_TLS": str(cfg.smtp.use_tls).lower(),
             "AUTHENTIK_EMAIL__USE_SSL": str(cfg.smtp.use_ssl).lower(),
             "AUTHENTIK_LISTEN__HTTP": f"0.0.0.0:{AUTHENTIK_HTTP_PORT}",
-            "AUTHENTIK_POSTGRESQL__HOST": data.instance.db_instance_endpoint_address,
+            "AUTHENTIK_POSTGRESQL__HOST": data.database.instance.db_instance_endpoint_address,
             "AUTHENTIK_POSTGRESQL__NAME": cfg.db.name,
-            "AUTHENTIK_POSTGRESQL__PORT": str(AUTHENTIK_DB_PORT),
+            "AUTHENTIK_POSTGRESQL__PORT": str(data.database.port),
             # NOTE: Without this setting, the stack will never reach a healthy
             # deployed state. The server and worker containers will endlessly
             # fail to connect to the database and restart.
@@ -99,10 +113,10 @@ class AuthentikStack(Stack):
                 smtp_secret, "username"
             ),
             "AUTHENTIK_POSTGRESQL__PASSWORD": ecs.Secret.from_secrets_manager(
-                data.master_secret, "password"
+                db_secret, "password"
             ),
             "AUTHENTIK_POSTGRESQL__USER": ecs.Secret.from_secrets_manager(
-                data.master_secret, "username"
+                db_secret, "username"
             ),
             "AUTHENTIK_SECRET_KEY": ecs.Secret.from_secrets_manager(secret_key),
         }
@@ -206,8 +220,12 @@ class AuthentikStack(Stack):
         worker_service.task_defn.add_to_task_role_policy(bucket_access_policy_statement)
 
         # Allow server and worker services to connect to DB instance.
-        data.instance.connections.allow_default_port_from(server_service.service)
-        data.instance.connections.allow_default_port_from(worker_service.service)
+        data.database.instance.connections.allow_default_port_from(
+            server_service.service
+        )
+        data.database.instance.connections.allow_default_port_from(
+            worker_service.service
+        )
 
         # Allow ALB to connect to server service HTTP port.
         server_service.security_group.add_ingress_rule(

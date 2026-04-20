@@ -1,3 +1,5 @@
+from typing import cast
+
 from aws_cdk import (
     Duration,
     aws_apigatewayv2 as apigwv2,
@@ -34,7 +36,7 @@ class WebFingerApi(Construct):
             path="/.well-known/webfinger",
             methods=[apigwv2.HttpMethod.GET],
             integration=apigwv2_integrations.HttpLambdaIntegration(
-                "Integration", handler
+                "Integration", cast(lambda_.IFunction, handler)
             ),
         )
 

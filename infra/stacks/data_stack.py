@@ -1,5 +1,6 @@
-import pathlib
 from typing import cast
+
+from dataclasses import dataclass
 
 from aws_cdk import (
     CustomResource,
@@ -15,15 +16,19 @@ from aws_cdk import (
 from constructs import Construct
 
 from ..constructs.database_instance import PrivateIsolatedDatabaseInstance
+from ..models.asset_loader import AssetLoader
 from ..models.data_config import DataConfig
 from ..models.data_exports import DataExports
 from ..models.foundation_exports import FoundationExports
 from ..models.instance_type import INSTANCE_TYPES
 
-DB_PORT = 5432
 
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_DB_INIT_ASSET = _REPO_ROOT / "scripts" / "cdk_assets" / "rds_logical_databases"
+@dataclass(frozen=True)
+class DataImports:
+    cfg: DataConfig
+    shared: FoundationExports
+    databases: list[str]
+    assets: AssetLoader
 
 
 class DataStack(Stack):
@@ -32,15 +37,18 @@ class DataStack(Stack):
         scope: Construct,
         construct_id: str,
         *,
-        cfg: DataConfig,
-        shared: FoundationExports,
-        databases: list[str],
+        imports: DataImports,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        cfg = imports.cfg
+        shared = imports.shared
+        databases = imports.databases
+        assets = imports.assets
+
         self.secret = secretsmanager.Secret.from_secret_name_v2(
-            self, "DatabaseSecret", "data/database"
+            self, "DatabaseSecret", cfg.master_secret_name
         )
 
         self.database = PrivateIsolatedDatabaseInstance(
@@ -48,13 +56,13 @@ class DataStack(Stack):
             "Database",
             secret=self.secret,
             vpc=shared.vpc,
+            port=cfg.instance.port,
             instance_kwargs=dict(
                 engine=rds.DatabaseInstanceEngine.postgres(
                     version=rds.PostgresEngineVersion.VER_16
                 ),
-                port=DB_PORT,
-                instance_type=INSTANCE_TYPES[cfg.instance_type],
-                allocated_storage=cfg.allocated_storage_gib,
+                instance_type=INSTANCE_TYPES[cfg.instance.instance_type],
+                allocated_storage=cfg.instance.allocated_storage_gib,
                 max_allocated_storage=100,
                 multi_az=False,
                 storage_encrypted=True,
@@ -65,7 +73,7 @@ class DataStack(Stack):
         init_fn = lambda_python.PythonFunction(
             self,
             "DbInitFn",
-            entry=str(_DB_INIT_ASSET),
+            entry=str(assets.lambda_path("rds_logical_databases")),
             runtime=lambda_.Runtime.PYTHON_3_12,
             index="index.py",
             handler="handler",
@@ -97,7 +105,6 @@ class DataStack(Stack):
         init.node.add_dependency(self.database.instance)
 
         self.exports = DataExports(
-            instance=self.database.instance,
-            security_group=self.database.security_group,
+            database=self.database,
             master_secret=self.secret,
         )

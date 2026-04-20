@@ -3,13 +3,13 @@ from typing import Any, Self
 
 
 @dataclass(frozen=True)
-class WebFingerConfig:
-    subject: str
-    oidc_issuer_application: str
+class DbConfig:
+    name: str
+    secret_name: str
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
         return cls(
-            subject=data["subject"],
-            oidc_issuer_application=data["oidc_issuer_application"],
+            name=data["name"],
+            secret_name=data["secret_name"],
         )

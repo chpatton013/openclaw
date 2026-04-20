@@ -1,33 +1,8 @@
 from dataclasses import dataclass
 from typing import Any, Self
 
-
-@dataclass(frozen=True)
-class AuthentikDbConfig:
-    name: str
-
-    @classmethod
-    def load(cls, data: dict[str, Any]) -> Self:
-        return cls(
-            name=data["name"],
-        )
-
-
-@dataclass(frozen=True)
-class AuthentikTaskConfig:
-    cpu: int
-    memory_limit_mib: int
-    desired_count: int
-    min_healthy_percent: float
-
-    @classmethod
-    def load(cls, data: dict[str, Any]) -> Self:
-        return cls(
-            cpu=data["cpu"],
-            memory_limit_mib=data["memory_limit_mib"],
-            desired_count=data["desired_count"],
-            min_healthy_percent=data["min_healthy_percent"],
-        )
+from .db_config import DbConfig
+from .fargate_task_config import FargateTaskConfig
 
 
 @dataclass(frozen=True)
@@ -53,9 +28,9 @@ class AuthentikSmtpConfig:
 class AuthentikConfig:
     subdomain: str
     image_version: str
-    db: AuthentikDbConfig
-    server: AuthentikTaskConfig
-    worker: AuthentikTaskConfig
+    db: DbConfig
+    server: FargateTaskConfig
+    worker: FargateTaskConfig
     smtp: AuthentikSmtpConfig
 
     @classmethod
@@ -63,8 +38,8 @@ class AuthentikConfig:
         return cls(
             subdomain=data["subdomain"],
             image_version=data["image_version"],
-            db=AuthentikDbConfig.load(data["db"]),
-            server=AuthentikTaskConfig.load(data["server"]),
-            worker=AuthentikTaskConfig.load(data["worker"]),
+            db=DbConfig.load(data["db"]),
+            server=FargateTaskConfig.load(data["server"]),
+            worker=FargateTaskConfig.load(data["worker"]),
             smtp=AuthentikSmtpConfig.load(data["smtp"]),
         )
