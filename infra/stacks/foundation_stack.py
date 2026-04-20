@@ -26,10 +26,15 @@ class FoundationStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        zone = route53.HostedZone.from_lookup(
+        public_zone = route53.HostedZone.from_lookup(
             self,
-            "Zone",
-            domain_name=cfg.root_domain,
+            "PublicZone",
+            domain_name=cfg.public_domain,
+        )
+        private_zone = route53.HostedZone.from_lookup(
+            self,
+            "PrivateZone",
+            domain_name=cfg.private_domain,
         )
 
         vpc = ec2.Vpc(
@@ -59,8 +64,10 @@ class FoundationStack(Stack):
         cluster = ecs.Cluster(self, "Cluster", vpc=vpc)
 
         self.exports = FoundationExports(
-            domain=cfg.root_domain,
-            zone=zone,
+            public_domain=cfg.public_domain,
+            public_zone=public_zone,
+            private_domain=cfg.private_domain,
+            private_zone=private_zone,
             vpc=vpc,
             cluster=cluster,
         )

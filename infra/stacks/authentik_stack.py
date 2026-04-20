@@ -7,18 +7,16 @@ from aws_cdk import (
     aws_ecs as ecs,
     aws_elasticloadbalancingv2 as elbv2,
     aws_iam as iam,
-    aws_rds as rds,
     aws_s3 as s3,
     aws_secretsmanager as secretsmanager,
 )
 from constructs import Construct
 
-from ..constructs.database_instance import PrivateIsolatedDatabaseInstance
 from ..constructs.fargate_service import PrivateEgressFargateService
 from ..constructs.public_http_alb import PublicHttpAlb
 from ..models.authentik_config import AuthentikConfig
+from ..models.data_exports import DataExports
 from ..models.foundation_exports import FoundationExports
-from ..models.instance_type import INSTANCE_TYPES
 
 AUTHENTIK_HTTP_PORT = 9000
 AUTHENTIK_DB_PORT = 5432
@@ -37,6 +35,7 @@ class AuthentikStack(Stack):
         *,
         cfg: AuthentikConfig,
         shared: FoundationExports,
+        data: DataExports,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -53,9 +52,6 @@ class AuthentikStack(Stack):
         smtp_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "SmtpSecret", "authentik/smtp"
         )
-        database_secret = secretsmanager.Secret.from_secret_name_v2(
-            self, "DatabaseSecret", "authentik/database"
-        )
 
         ###
         # Storage
@@ -71,28 +67,6 @@ class AuthentikStack(Stack):
             auto_delete_objects=False,
         )
 
-        database = PrivateIsolatedDatabaseInstance(
-            self,
-            "Database",
-            secret=database_secret,
-            vpc=shared.vpc,
-            instance_kwargs=dict(
-                engine=rds.DatabaseInstanceEngine.postgres(
-                    version=rds.PostgresEngineVersion.VER_16
-                ),
-                port=AUTHENTIK_DB_PORT,
-                instance_type=INSTANCE_TYPES[cfg.db.instance_type],
-                database_name=cfg.db.name,
-                allocated_storage=cfg.db.allocated_storage_gib,
-                max_allocated_storage=100,
-                multi_az=False,
-                backup_retention=Duration.days(7),
-                deletion_protection=True,
-                storage_encrypted=True,
-                publicly_accessible=False,
-            ),
-        )
-
         ###
         # Services
 
@@ -104,7 +78,7 @@ class AuthentikStack(Stack):
             "AUTHENTIK_EMAIL__USE_TLS": str(cfg.smtp.use_tls).lower(),
             "AUTHENTIK_EMAIL__USE_SSL": str(cfg.smtp.use_ssl).lower(),
             "AUTHENTIK_LISTEN__HTTP": f"0.0.0.0:{AUTHENTIK_HTTP_PORT}",
-            "AUTHENTIK_POSTGRESQL__HOST": database.instance.db_instance_endpoint_address,
+            "AUTHENTIK_POSTGRESQL__HOST": data.instance.db_instance_endpoint_address,
             "AUTHENTIK_POSTGRESQL__NAME": cfg.db.name,
             "AUTHENTIK_POSTGRESQL__PORT": str(AUTHENTIK_DB_PORT),
             # NOTE: Without this setting, the stack will never reach a healthy
@@ -125,10 +99,10 @@ class AuthentikStack(Stack):
                 smtp_secret, "username"
             ),
             "AUTHENTIK_POSTGRESQL__PASSWORD": ecs.Secret.from_secrets_manager(
-                database_secret, "password"
+                data.master_secret, "password"
             ),
             "AUTHENTIK_POSTGRESQL__USER": ecs.Secret.from_secrets_manager(
-                database_secret, "username"
+                data.master_secret, "username"
             ),
             "AUTHENTIK_SECRET_KEY": ecs.Secret.from_secrets_manager(secret_key),
         }
@@ -197,9 +171,9 @@ class AuthentikStack(Stack):
         alb = PublicHttpAlb(
             self,
             "PublicHttpAlb",
-            fqdn=f"{cfg.subdomain}.{shared.domain}",
+            fqdn=f"{cfg.subdomain}.{shared.public_domain}",
             a_record=cfg.subdomain,
-            zone=shared.zone,
+            zone=shared.public_zone,
             vpc=shared.vpc,
         )
 
@@ -232,8 +206,8 @@ class AuthentikStack(Stack):
         worker_service.task_defn.add_to_task_role_policy(bucket_access_policy_statement)
 
         # Allow server and worker services to connect to DB instance.
-        database.instance.connections.allow_default_port_from(server_service.service)
-        database.instance.connections.allow_default_port_from(worker_service.service)
+        data.instance.connections.allow_default_port_from(server_service.service)
+        data.instance.connections.allow_default_port_from(worker_service.service)
 
         # Allow ALB to connect to server service HTTP port.
         server_service.security_group.add_ingress_rule(

@@ -9,7 +9,9 @@ from aws_cdk import (
 
 @dataclass(frozen=True)
 class FoundationExports:
-    domain: str
-    zone: route53.IHostedZone
+    public_domain: str
+    public_zone: route53.IHostedZone
+    private_domain: str
+    private_zone: route53.IHostedZone
     vpc: ec2.IVpc
     cluster: ecs.ICluster

@@ -1,18 +1,21 @@
 [foundation]
-root_domain = "chiiiirs.com"
+public_domain = "chiiiirs.com"
+private_domain = "chiiiirs.net"
 
 [webfinger]
-subject = "acct:tailscale@chiiiirs.com"
+subject = "acct:chris@chiiiirs.com"
 oidc_issuer_url = "https://auth.chiiiirs.com/application/o/tailscale/"
 
 [authentik]
 subdomain = "auth"
 image_version = "2026.2"
 
-[authentik.db]
-name = "authentik"
+[data]
 instance_type = "t4g.small"
 allocated_storage_gib = 20
+
+[authentik.db]
+name = "authentik"
 
 [authentik.server]
 cpu = 1024
@@ -29,3 +32,26 @@ min_healthy_percent = 100
 [authentik.smtp]
 host = "smtp.chiiiirs.com"
 from_email_address = "authentik@chiiiirs.com"
+
+[headscale]
+control_plane_subdomain = "headscale"
+admin_subdomain = "headplane"
+private_subdomain = "ts"
+headscale_image_version = "0.26.1"
+headplane_image_version = "0.6.1"
+oidc_issuer_url = "https://auth.chiiiirs.com/application/o/headscale/"
+
+[headscale.db]
+name = "headscale"
+
+[headscale.headscale]
+cpu = 512
+memory_limit_mib = 1024
+desired_count = 1
+min_healthy_percent = 100
+
+[headscale.headplane]
+cpu = 256
+memory_limit_mib = 512
+desired_count = 1
+min_healthy_percent = 100

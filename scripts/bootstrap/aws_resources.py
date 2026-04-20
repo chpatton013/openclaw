@@ -64,17 +64,34 @@ def prompt_password_or_default(label: str) -> str | None:
 
 @dataclass
 class Inputs:
-    domain: str
+    public_domain: str
+    private_domain: str
+    data_database_username: str
+    data_database_password: str | None
     authentik_secret_key: str | None
     authentik_bootstrap_email: str
     authentik_bootstrap_password: str | None
-    authentik_database_username: str
-    authentik_database_password: str | None
     authentik_smtp_username: str
     authentik_smtp_password: str | None
+    headscale_oidc_client_id: str | None
+    headscale_oidc_client_secret: str | None
+    headplane_oidc_client_id: str | None
+    headplane_oidc_client_secret: str | None
 
 
-def collect_inputs(args: argparse.Namespace, domain: str) -> Inputs:
+def collect_inputs(
+    args: argparse.Namespace, public_domain: str, private_domain: str
+) -> Inputs:
+    data_database_username = resolve_arg(
+        args.data_database_username
+    ) or prompt_required("Data database master username", default="postgres")
+
+    data_database_password = resolve_arg(args.data_database_password)
+    if args.data_database_password is None:
+        data_database_password = prompt_password_or_default(
+            "Data database master password"
+        )
+
     authentik_secret_key = resolve_arg(args.authentik_secret_key)
     if args.authentik_secret_key is None:
         authentik_secret_key = prompt_password_or_default("Authentik secret key")
@@ -89,16 +106,6 @@ def collect_inputs(args: argparse.Namespace, domain: str) -> Inputs:
             "Authentik bootstrap password"
         )
 
-    authentik_database_username = resolve_arg(
-        args.authentik_database_username
-    ) or prompt_required("Authentik database username", default="authentik")
-
-    authentik_database_password = resolve_arg(args.authentik_database_password)
-    if args.authentik_database_password is None:
-        authentik_database_password = prompt_password_or_default(
-            "Authentik database password"
-        )
-
     authentik_smtp_username = resolve_arg(
         args.authentik_smtp_username
     ) or prompt_required("Authentik SMTP username", default="authentik")
@@ -107,15 +114,25 @@ def collect_inputs(args: argparse.Namespace, domain: str) -> Inputs:
     if args.authentik_smtp_password is None:
         authentik_smtp_password = prompt_password_or_default("Authentik SMTP password")
 
+    headscale_oidc_client_id = resolve_arg(args.headscale_oidc_client_id)
+    headscale_oidc_client_secret = resolve_arg(args.headscale_oidc_client_secret)
+    headplane_oidc_client_id = resolve_arg(args.headplane_oidc_client_id)
+    headplane_oidc_client_secret = resolve_arg(args.headplane_oidc_client_secret)
+
     return Inputs(
-        domain=domain,
+        public_domain=public_domain,
+        private_domain=private_domain,
+        data_database_username=data_database_username,
+        data_database_password=data_database_password,
         authentik_secret_key=authentik_secret_key,
         authentik_bootstrap_email=authentik_bootstrap_email,
         authentik_bootstrap_password=authentik_bootstrap_password,
-        authentik_database_username=authentik_database_username,
-        authentik_database_password=authentik_database_password,
         authentik_smtp_username=authentik_smtp_username,
         authentik_smtp_password=authentik_smtp_password,
+        headscale_oidc_client_id=headscale_oidc_client_id,
+        headscale_oidc_client_secret=headscale_oidc_client_secret,
+        headplane_oidc_client_id=headplane_oidc_client_id,
+        headplane_oidc_client_secret=headplane_oidc_client_secret,
     )
 
 
@@ -136,6 +153,7 @@ def write_secret_cmd(
     template: dict | None = None,
     key: str | None = None,
     length: int | None = None,
+    bytes_: int | None = None,
     exclude_punctuation: bool = False,
     use_stdin: bool = False,
 ) -> list[str]:
@@ -147,6 +165,8 @@ def write_secret_cmd(
         cmd.append("--exclude-punctuation")
     if use_stdin:
         cmd.append("-")
+    elif bytes_ is not None:
+        cmd.extend([f"--bytes={bytes_}"])
     elif length is not None:
         cmd.extend([f"--length={length}"])
     return cmd
@@ -160,19 +180,59 @@ def main() -> int:
             "from the named file."
         )
     )
+    parser.add_argument("--data-database-username")
+    parser.add_argument("--data-database-password")
     parser.add_argument("--authentik-secret-key")
     parser.add_argument("--authentik-bootstrap-email")
     parser.add_argument("--authentik-bootstrap-password")
-    parser.add_argument("--authentik-database-username")
-    parser.add_argument("--authentik-database-password")
     parser.add_argument("--authentik-smtp-username")
     parser.add_argument("--authentik-smtp-password")
+    parser.add_argument("--headscale-oidc-client-id")
+    parser.add_argument("--headscale-oidc-client-secret")
+    parser.add_argument("--headplane-oidc-client-id")
+    parser.add_argument("--headplane-oidc-client-secret")
     args = parser.parse_args()
 
     cfg = load_config(CONFIG_PATH)
-    inputs = collect_inputs(args, domain=cfg.foundation.root_domain)
+    inputs = collect_inputs(
+        args,
+        public_domain=cfg.foundation.public_domain,
+        private_domain=cfg.foundation.private_domain,
+    )
 
-    run([str(CREATE_HOSTED_ZONE), inputs.domain], "create-hosted-zone")
+    run(
+        [str(CREATE_HOSTED_ZONE), inputs.public_domain],
+        "create-hosted-zone (public)",
+    )
+    run(
+        [str(CREATE_HOSTED_ZONE), inputs.private_domain],
+        "create-hosted-zone (private)",
+    )
+
+    data_database_template = {"username": inputs.data_database_username}
+    if inputs.data_database_password is not None:
+        run(
+            write_secret_cmd(
+                "data/database",
+                template=data_database_template,
+                key="password",
+                exclude_punctuation=True,
+                use_stdin=True,
+            ),
+            "write-secret data/database",
+            stdin_value=inputs.data_database_password,
+        )
+    else:
+        run(
+            write_secret_cmd(
+                "data/database",
+                template=data_database_template,
+                key="password",
+                length=32,
+                exclude_punctuation=True,
+            ),
+            "write-secret data/database",
+        )
 
     if inputs.authentik_secret_key is not None:
         run(
@@ -214,31 +274,6 @@ def main() -> int:
             "write-secret authentik/bootstrap",
         )
 
-    authentik_database_template = {"username": inputs.authentik_database_username}
-    if inputs.authentik_database_password is not None:
-        run(
-            write_secret_cmd(
-                "authentik/database",
-                template=authentik_database_template,
-                key="password",
-                exclude_punctuation=True,
-                use_stdin=True,
-            ),
-            "write-secret authentik/database",
-            stdin_value=inputs.authentik_database_password,
-        )
-    else:
-        run(
-            write_secret_cmd(
-                "authentik/database",
-                template=authentik_database_template,
-                key="password",
-                length=32,
-                exclude_punctuation=True,
-            ),
-            "write-secret authentik/database",
-        )
-
     authentik_smtp_template = {"username": inputs.authentik_smtp_username}
     if inputs.authentik_smtp_password is not None:
         run(
@@ -262,6 +297,50 @@ def main() -> int:
             ),
             "write-secret authentik/smtp",
         )
+
+    headscale_oidc_template = {"client_id": inputs.headscale_oidc_client_id or ""}
+    headscale_oidc_value = inputs.headscale_oidc_client_secret or ""
+    run(
+        write_secret_cmd(
+            "headscale/oidc",
+            template=headscale_oidc_template,
+            key="client_secret",
+            use_stdin=True,
+        ),
+        "write-secret headscale/oidc",
+        stdin_value=headscale_oidc_value,
+    )
+
+    headplane_oidc_template = {"client_id": inputs.headplane_oidc_client_id or ""}
+    headplane_oidc_value = inputs.headplane_oidc_client_secret or ""
+    run(
+        write_secret_cmd(
+            "headplane/oidc",
+            template=headplane_oidc_template,
+            key="client_secret",
+            use_stdin=True,
+        ),
+        "write-secret headplane/oidc",
+        stdin_value=headplane_oidc_value,
+    )
+
+    run(
+        write_secret_cmd("headplane/cookie-secret", bytes_=32),
+        "write-secret headplane/cookie-secret",
+    )
+
+    run(
+        write_secret_cmd("headscale/noise-private-key", bytes_=32),
+        "write-secret headscale/noise-private-key",
+    )
+
+    # Empty placeholder - the HeadscaleStack custom resource populates this
+    # with the real API key after Headscale is up.
+    run(
+        write_secret_cmd("headscale/admin-api-key", use_stdin=True),
+        "write-secret headscale/admin-api-key",
+        stdin_value="",
+    )
 
     return 0
 

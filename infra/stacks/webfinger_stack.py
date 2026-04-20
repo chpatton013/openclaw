@@ -36,14 +36,14 @@ class WebFingerStack(Stack):
         certificate = acm.Certificate(
             self,
             "Certificate",
-            domain_name=shared.domain,
-            validation=acm.CertificateValidation.from_dns(shared.zone),
+            domain_name=shared.public_domain,
+            validation=acm.CertificateValidation.from_dns(shared.public_zone),
         )
 
         domain = apigwv2.DomainName(
             self,
             "DomainName",
-            domain_name=shared.domain,
+            domain_name=shared.public_domain,
             certificate=certificate,
         )
 
@@ -58,8 +58,8 @@ class WebFingerStack(Stack):
         route53.ARecord(
             self,
             "AliasRecord",
-            zone=shared.zone,
-            record_name=shared.domain,
+            zone=shared.public_zone,
+            record_name=shared.public_domain,
             target=route53.RecordTarget.from_alias(
                 cast(
                     route53.IAliasRecordTarget,

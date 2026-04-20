@@ -3,13 +3,13 @@ from typing import Any, Self
 
 
 @dataclass(frozen=True)
-class FoundationConfig:
-    public_domain: str
-    private_domain: str
+class DataConfig:
+    instance_type: str
+    allocated_storage_gib: int
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
         return cls(
-            public_domain=data["public_domain"],
-            private_domain=data["private_domain"],
+            instance_type=data["instance_type"],
+            allocated_storage_gib=data["allocated_storage_gib"],
         )

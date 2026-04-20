@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import cast
 
 from aws_cdk import (
@@ -20,6 +21,7 @@ class PublicHttpAlb(Construct):
         a_record: str,
         zone: route53.IHostedZone,
         vpc: ec2.IVpc,
+        additional_fqdns: Sequence[str] = (),
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -46,6 +48,7 @@ class PublicHttpAlb(Construct):
             self,
             "Certificate",
             domain_name=fqdn,
+            subject_alternative_names=(additional_fqdns or None),
             validation=acm.CertificateValidation.from_dns(zone),
         )
 
@@ -64,15 +67,30 @@ class PublicHttpAlb(Construct):
             ),
         )
 
+        alias_target = route53.RecordTarget.from_alias(
+            cast(
+                route53.IAliasRecordTarget,
+                route53_targets.LoadBalancerTarget(self.alb),
+            )
+        )
+
         self.a_record = route53.ARecord(
             self,
             "AliasRecord",
             zone=zone,
             record_name=a_record,
-            target=route53.RecordTarget.from_alias(
-                cast(
-                    route53.IAliasRecordTarget,
-                    route53_targets.LoadBalancerTarget(self.alb),
-                )
-            ),
+            target=alias_target,
         )
+
+        self.additional_a_records: list[route53.ARecord] = []
+        for additional_fqdn in additional_fqdns:
+            record_name = additional_fqdn.removesuffix(f".{zone.zone_name}")
+            self.additional_a_records.append(
+                route53.ARecord(
+                    self,
+                    f"AliasRecord-{record_name}",
+                    zone=zone,
+                    record_name=record_name,
+                    target=alias_target,
+                )
+            )

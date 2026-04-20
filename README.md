@@ -14,9 +14,11 @@ deployment, which is split across AWS (in progress) and a private homelab
 
 Update [`config.toml`](./config.toml) based on your domain and hosting needs.
 
-`foundation.root_domain` may be the only value that **has** to change, but your
-hosting needs may dictate changes to other fields. Look at the
-[Contents](#Contents) section for a full breakdown of what services you're
+`foundation.public_domain` and `foundation.private_domain` are the values most
+likely to change for a fresh deployment. `public_domain` hosts the
+control-plane URLs (Authentik, WebFinger, etc.); `private_domain` is reserved
+for services that don't need to be reachable from the public internet. Look at
+the [Contents](#Contents) section for a full breakdown of what services you're
 configuring.
 
 ### Setup your AWS credentials
@@ -66,6 +68,68 @@ You can modify those concurrency parameters or replace `--all` with the names of
 specific stacks, as needed. `--require-approval` can be omitted if you aren't
 running with any concurrency.
 
+## Post-Deploy Setup
+- Authentik
+    - Directory > Users > New Service Account
+        - Set name to `tailscale`
+        - Enable "Create Group" and "Expiring"
+        - Create Service Account
+        - Copy the password for later
+    - Directory > Groups > Users > Add existing user
+        - Select `akadmin` and `tailscale`
+        - Confirm
+        - Assign
+    - Applications > Applications > Create with Provider
+        - Application
+            - Set application name to `Tailscale`, and slug to `tailscale`
+        - Choose a Provider
+            - Set provider type to "OAuth2/OpenID Provider"
+        - Configure Provider
+            - Set Authorization flow to "default-authorization-provider-implicit-consent"
+            - Set Protocol settings > Client type to "Confidential"
+            - Copy the Client ID and Client Secret for later
+            - Add a new Redirect URI (strict) for "https://login.tailscale.com/a/oauth_response"
+            - Ensure Advanced protocol settings contains `email`, `openid`, and `profile`
+        - Configure Bindings
+            - Bind existing policy/group/user
+                - Group > tailscale
+                - Set Order to 0
+            - Next
+        - Review and Submit Application
+            - Submit
+- Tailscale
+    - Create a new account with OIDC provider
+        - Email address: tailscale@chiiiirs.com
+        - WebFinger URL (automatically populated to https://chiiiirs.com/.well-known/webfinger)
+        - Which identity provider: Authentik
+        - Get OIDC issuer
+        - Copy/paste Client ID and Client Secret
+        - Prompts: consent
+        - Sign up with OIDC
+    - Authentik redirecting to Tailscale
+        - Continue
+- Headscale (Authentik OIDC app)
+    - Applications > Applications > Create with Provider
+        - Application: name `Headscale`, slug `headscale`
+        - Provider type: OAuth2/OpenID Provider
+        - Authorization flow: `default-authorization-provider-implicit-consent`
+        - Client type: Confidential
+        - Redirect URI (strict): `https://headscale.<public_domain>/oidc/callback`
+        - Scopes: `openid`, `profile`, `email`
+        - Copy Client ID + Client Secret → `headscale/oidc` secret
+- Headplane (Authentik OIDC app)
+    - Applications > Applications > Create with Provider
+        - Application: name `Headplane`, slug `headplane`
+        - Provider type: OAuth2/OpenID Provider
+        - Client type: Confidential
+        - Redirect URI (strict): `https://headplane.<public_domain>/oidc/callback`
+        - Scopes: `openid`, `profile`, `email`
+        - Copy Client ID + Client Secret → `headplane/oidc` secret
+- `chiiiirs.net` registrar
+    - After the `chiiiirs.net` hosted zone is created, copy its 4 NS records
+      from Route53 into the registrar DNS config so that MagicDNS under
+      `ts.chiiiirs.net` is reachable.
+
 ## Manual Bootstrapping
 
 If you don't want to use the automated bootstrapping script, you can perform
@@ -89,8 +153,13 @@ script for each step, or take matters into your own hands.
     - Helper script
         - `bin/aws-write-secret authentik/secret-key --length=50 --exclude-punctuation`
         - `bin/aws-write-secret authentik/bootstrap --template='{"email":"EMAIL"}' --key=password`
-        - `bin/aws-write-secret authentik/database --template='{"username":"USERNAME"}' --key=password`
+        - `bin/aws-write-secret data/database --template='{"username":"USERNAME"}' --key=password`
         - `bin/aws-write-secret authentik/smtp --template='{"username":"USERNAME"}' --key=password`
+        - `bin/aws-write-secret headscale/oidc --template='{"client_id":"CLIENT_ID"}' --key=client_secret`
+        - `bin/aws-write-secret headplane/oidc --template='{"client_id":"CLIENT_ID"}' --key=client_secret`
+        - `bin/aws-write-secret headscale/noise-private-key --bytes=32`
+        - `bin/aws-write-secret headplane/cookie-secret --bytes=32`
+        - `bin/aws-write-secret headscale/admin-api-key -  # empty placeholder; populated by HeadscaleStack`
 
 ## Development
 
@@ -163,6 +232,29 @@ DAG. But they can never declare a cyclical dependency.
         - Network: publicly-accessible Application Load Balancer
     - TODO:
         - Setup an ECR to mirror Authentik container image
+- [Data Stack](./infra/stacks/data_stack.py)
+    - Shared Postgres for stateful services (Authentik, Headscale, ...).
+    - Resources:
+        - RDS PostgreSQL instance in a private-isolated subnet
+        - A CDK custom resource (Provider + Lambda using `pg8000`) that
+          creates each logical database named by the stack's `databases=[...]`
+          list if it doesn't exist yet
+- [Headscale Stack](./infra/stacks/headscale_stack.py)
+    - Self-hosted Tailscale control server + Headplane admin UI.
+    - Resources:
+        - Services: `headscale` and `headplane` Fargate services
+        - Network: one public ALB serving both `headscale.<public_domain>`
+          and `headplane.<public_domain>` via host-header routing; Cloud Map
+          private namespace `headscale.local` for Headplane→Headscale
+        - Storage: shared Postgres via DataStack
+        - Init: noise private key materialized from
+          `headscale/noise-private-key` onto a tmpfs volume by an init
+          container before Headscale starts
+        - Custom resource: populates `headscale/admin-api-key` by running a
+          one-shot Fargate task (`headscale apikeys create`) the first time
+          the stack is deployed
+    - MagicDNS base domain: `{headscale.private_subdomain}.{foundation.private_domain}`
+      (e.g. `ts.chiiiirs.net`)
 - [OpenClaw Stack](./infra/stacks/openclaw_stack.py)
     - Agentic assistant platform
     - Resources:
@@ -176,9 +268,48 @@ DAG. But they can never declare a cyclical dependency.
           privileges to communicate with anything internal.
         - I may want to modify this setup to reuse the foundation VPC and host
           in Fargate. Will need to get more trust in the system first.
-- Planned stacks:
+- Planned AWS stacks:
     - WebFinger
     - Vaultwarden
     - Headscale
     - searXNG
-    - Matrix
+    - Matrix Synapse
+    - mail
+- Planned homelab hosting:
+    - ownCloud / NextCloud
+    - Gitea or Forgejo
+
+- Qs:
+    - Why is noise private key exposed through an init container instead of
+      through the env-like secrets that were used for authentik?
+    - why is nouse ket b64 if we just decode it before writing?
+    - why does pyrightconfig.json ignore scripts/cdk_assets?
+    - scripts/cdk_assets/headscale_admin_api_key/index.py: why redirect to file
+      and immediately cat?
+- TODO:
+    - Authentik blueprint for tailscale
+    - Dedupe *TaskConfig classes into a shared FargateTaskConfig
+    - Add *Imports classes for each stack that takes any inputs, so we don't
+      have to thread in shared and data as separate arguments. Do the O(n)
+      arg-passing with a single dataclass.
+    - Check if we need to do anything with db username/password setup. Don't
+      want the authentik user to be authing for every separate database. Might
+      mean multiple secrets, so DataStack will have to be informed about each of
+      them somehow. why is there a master_secret
+    - Make ECRs for each image we need?
+    - Update AuthentikDbConfig to be a generic DB config; take name of secret as
+      input
+    - update DataConfig to have a DbInstance config
+    - rename HeadscaleConfig props
+        - control_plane_subdomain->headscale_subdomain
+        - admin_subdomain->headplane_subdomain
+        - private_subdomain->dns_subdomain
+    - DataExports.instance -> DataExports.database.instance
+    - DB_PORT to come from config
+    - lambda source to come from new dir
+    - asset loader lib in models
+    - HEADSCALE_DNS_NAMESERVERS_GLOBAL, HEADSCALE_LOG_LEVEL from config
+    - min_healthy_percent should be int
+    - creds rotation
+    - oidc_issuer_url to oidc_issuer_application
+    - can we get rid of uses of cast

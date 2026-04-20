@@ -1,5 +1,7 @@
 import argparse
+import base64
 import json
+import secrets
 import sys
 
 import boto3
@@ -36,16 +38,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("secret_name")
     parser.add_argument("--overwrite", action="store_true")
 
-    exclude = parser.add_mutually_exclusive_group()
-    exclude.add_argument("--exclude-punctuation", action="store_true")
-    exclude.add_argument("--exclude-characters", metavar="CHARSET")
+    exclude_group = parser.add_mutually_exclusive_group()
+    exclude_group.add_argument("--exclude-punctuation", action="store_true")
+    exclude_group.add_argument("--exclude-characters", metavar="CHARSET")
 
     parser.add_argument("--template", metavar="TEMPLATE")
     parser.add_argument("--key", metavar="KEY")
 
-    # Sentinel lets us distinguish "user passed --length" from "defaulted".
-    parser.add_argument("--length", type=int, default=None)
-    parser.add_argument("input", nargs="?", default=None, metavar="INPUT")
+    input_group = parser.add_mutually_exclusive_group()
+    input_group.add_argument("--length", type=int, default=None)
+    input_group.add_argument("--bytes", type=int, default=None, metavar="N")
+    input_group.add_argument("input", nargs="?", default=None, metavar="INPUT")
     return parser
 
 
@@ -55,6 +58,11 @@ def main() -> int:
 
     if (args.template is None) != (args.key is None):
         parser.error("--template and --key must be used together or not at all")
+
+    if args.bytes is not None and (args.exclude_punctuation or args.exclude_characters):
+        parser.error(
+            "--bytes is incompatible with --exclude-punctuation/--exclude-characters"
+        )
 
     template_dict: dict | None = None
     if args.template is not None:
@@ -67,16 +75,14 @@ def main() -> int:
         if args.key in template_dict:
             parser.error(f"--key '{args.key}' already present in --template")
 
-    if args.length is not None and args.input is not None:
-        parser.error("--length and INPUT are mutually exclusive")
-
-    length = args.length if args.length is not None else 32
-
     client = boto3.client("secretsmanager")
 
     if args.input is not None:
         value = read_input(args.input)
+    elif args.bytes is not None:
+        value = base64.b64encode(secrets.token_bytes(args.bytes)).decode("ascii")
     else:
+        length = args.length if args.length is not None else 32
         value = generate_password(
             client, length, args.exclude_punctuation, args.exclude_characters
         )

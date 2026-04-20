@@ -5,15 +5,11 @@ from typing import Any, Self
 @dataclass(frozen=True)
 class AuthentikDbConfig:
     name: str
-    instance_type: str
-    allocated_storage_gib: int
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
         return cls(
             name=data["name"],
-            instance_type=data["instance_type"],
-            allocated_storage_gib=data["allocated_storage_gib"],
         )
 
 
