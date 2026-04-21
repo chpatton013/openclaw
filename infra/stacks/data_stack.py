@@ -19,6 +19,7 @@ from ..constructs.database_instance import PrivateIsolatedDatabaseInstance
 from ..models.asset_loader import AssetLoader
 from ..models.data_config import DataConfig
 from ..models.data_exports import DataExports
+from ..models.db_config import DbConfig
 from ..models.foundation_exports import FoundationExports
 from ..models.instance_type import INSTANCE_TYPES
 
@@ -27,7 +28,7 @@ from ..models.instance_type import INSTANCE_TYPES
 class DataImports:
     cfg: DataConfig
     shared: FoundationExports
-    databases: list[str]
+    databases: list[DbConfig]
     assets: AssetLoader
 
 
@@ -86,6 +87,20 @@ class DataStack(Stack):
         self.secret.grant_read(init_fn)
         self.database.instance.connections.allow_default_port_from(init_fn)
 
+        database_entries = []
+        for db_cfg in databases:
+            db_secret = secretsmanager.Secret.from_secret_name_v2(
+                self, f"DbSecret-{db_cfg.name}", db_cfg.secret_name
+            )
+            db_secret.grant_read(init_fn)
+            database_entries.append(
+                {
+                    "Name": db_cfg.name,
+                    "User": db_cfg.name,
+                    "SecretArn": db_secret.secret_arn,
+                }
+            )
+
         provider = cr.Provider(
             self,
             "DbInitProvider",
@@ -99,7 +114,7 @@ class DataStack(Stack):
                 "Host": self.database.instance.db_instance_endpoint_address,
                 "Port": self.database.instance.db_instance_endpoint_port,
                 "MasterSecretArn": self.secret.secret_arn,
-                "Databases": databases,
+                "Databases": database_entries,
             },
         )
         init.node.add_dependency(self.database.instance)

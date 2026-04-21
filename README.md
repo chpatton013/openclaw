@@ -128,6 +128,9 @@ script for each step, or take matters into your own hands.
         - `bin/aws-write-secret authentik/secret-key --length=50 --exclude-punctuation`
         - `bin/aws-write-secret authentik/bootstrap --template='{"email":"EMAIL"}' --key=password`
         - `bin/aws-write-secret data/database --template='{"username":"USERNAME"}' --key=password`
+          (RDS master; read by the `DataStack` init Lambda only — no service uses it)
+        - `bin/aws-write-secret authentik/database --template='{"username":"authentik"}' --key=password --length=32 --exclude-punctuation`
+        - `bin/aws-write-secret headscale/database --template='{"username":"headscale"}' --key=password --length=32 --exclude-punctuation`
         - `bin/aws-write-secret authentik/smtp --template='{"username":"USERNAME"}' --key=password`
         - `bin/aws-write-secret authentik/oidc/tailscale --template='{"client_id":"CLIENT_ID"}' --key=client_secret`
           (values from `secrets/authentik.toml`)
@@ -259,24 +262,6 @@ DAG. But they can never declare a cyclical dependency.
     - Gitea or Forgejo
 
 - TODO:
-    - Per-service DB credentials instead of reusing the RDS master secret.
-        - **Today**: `data/database` is the RDS master credential. Authentik
-          and Headscale both connect as the master user — every logical DB is
-          accessed by a superuser, blast radius is total, and rotation couples
-          all services.
-        - **Design**: each service declares its own login in `DbConfig` (name
-          + secret_name, already plumbed). Extend the `rds_logical_databases`
-          init Lambda so each entry in `databases=[...]` becomes
-          `{name, user, secret_arn}`. On update the Lambda runs (as the
-          master) `CREATE DATABASE x; CREATE USER u WITH PASSWORD '...';
-          GRANT ALL ON DATABASE x TO u;` — reading the per-service password
-          from Secrets Manager.
-        - **Bootstrap**: add one `<service>/database` secret per service
-          (`authentik/database`, `headscale/database`), generated with
-          `bin/aws-write-secret --length=32`. Config points each service at
-          its own `secret_name`.
-        - **Master**: `data/database` stays, but is only read by the init
-          Lambda (and rotation). No service ever sees it again.
     - Automated credential rotation. Two viable paths:
         - **Secrets Manager hosted rotation**
           (`secret.add_rotation_schedule(...,

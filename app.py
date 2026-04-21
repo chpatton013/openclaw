@@ -41,7 +41,7 @@ data = DataStack(
     imports=DataImports(
         cfg=cfg.data,
         shared=shared,
-        databases=[cfg.authentik.db.name, cfg.headscale.db.name],
+        databases=[cfg.authentik.db, cfg.headscale.db],
         assets=assets,
     ),
     env=env,

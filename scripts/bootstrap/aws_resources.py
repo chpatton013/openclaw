@@ -254,6 +254,19 @@ def main() -> int:
             "write-secret data/database",
         )
 
+    for service in ("authentik", "headscale"):
+        secret_name = f"{service}/database"
+        run(
+            write_secret_cmd(
+                secret_name,
+                template={"username": service},
+                key="password",
+                length=32,
+                exclude_punctuation=True,
+            ),
+            f"write-secret {secret_name}",
+        )
+
     if inputs.authentik_secret_key is not None:
         run(
             write_secret_cmd("authentik/secret-key", use_stdin=True),
