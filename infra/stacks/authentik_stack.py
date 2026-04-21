@@ -17,6 +17,7 @@ from constructs import Construct
 
 from ..constructs.fargate_service import PrivateEgressFargateService
 from ..constructs.public_http_alb import PublicHttpAlb
+from ..constructs.shared_volume_init import SharedVolumeInit
 from ..models.asset_loader import AssetLoader
 from ..models.authentik_config import AuthentikConfig
 from ..models.data_exports import DataExports
@@ -241,51 +242,29 @@ class AuthentikStack(Stack):
         server_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
         worker_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
 
-        for svc, init_prefix in [
-            (server_service, "authentik-server-blueprints-init"),
-            (worker_service, "authentik-worker-blueprints-init"),
+        for svc, init_id, init_prefix in [
+            (
+                server_service,
+                "ServerBlueprintsInit",
+                "authentik-server-blueprints-init",
+            ),
+            (
+                worker_service,
+                "WorkerBlueprintsInit",
+                "authentik-worker-blueprints-init",
+            ),
         ]:
-            svc.task_defn.add_volume(name=BLUEPRINTS_VOLUME)
-            svc.container.add_mount_points(
-                ecs.MountPoint(
-                    container_path=BLUEPRINTS_MOUNT_PATH,
-                    source_volume=BLUEPRINTS_VOLUME,
-                    read_only=True,
-                )
-            )
-            blueprints_init = svc.task_defn.add_container(
-                "BlueprintsInit",
-                image=ecs.ContainerImage.from_registry(
-                    "public.ecr.aws/aws-cli/aws-cli:latest"
-                ),
-                essential=False,
-                entry_point=["sh", "-c"],
-                command=[
-                    "; ".join(
-                        [
-                            "set -eu",
-                            f'aws s3 sync "s3://${{BLUEPRINTS_BUCKET}}/" "{BLUEPRINTS_MOUNT_PATH}/"',
-                        ]
-                    )
+            SharedVolumeInit(
+                self,
+                init_id,
+                service=svc,
+                volume_name=BLUEPRINTS_VOLUME,
+                mount_path=BLUEPRINTS_MOUNT_PATH,
+                shell_commands=[
+                    f'aws s3 sync "s3://${{BLUEPRINTS_BUCKET}}/" "{BLUEPRINTS_MOUNT_PATH}/"',
                 ],
                 environment={"BLUEPRINTS_BUCKET": blueprints_bucket.bucket_name},
-                logging=ecs.LogDrivers.aws_logs(
-                    stream_prefix=init_prefix,
-                    log_group=svc.log_group,
-                ),
-            )
-            blueprints_init.add_mount_points(
-                ecs.MountPoint(
-                    container_path=BLUEPRINTS_MOUNT_PATH,
-                    source_volume=BLUEPRINTS_VOLUME,
-                    read_only=False,
-                )
-            )
-            svc.container.add_container_dependencies(
-                ecs.ContainerDependency(
-                    container=blueprints_init,
-                    condition=ecs.ContainerDependencyCondition.SUCCESS,
-                )
+                stream_prefix=init_prefix,
             )
             blueprints_bucket.grant_read(svc.task_defn.task_role)
 

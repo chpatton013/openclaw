@@ -2,15 +2,16 @@ from dataclasses import dataclass
 from typing import cast
 
 from aws_cdk import (
+    Duration,
     Stack,
     aws_apigatewayv2 as apigwv2,
-    aws_certificatemanager as acm,
-    aws_route53 as route53,
-    aws_route53_targets as route53_targets,
+    aws_apigatewayv2_integrations as apigwv2_integrations,
+    aws_lambda as lambda_,
 )
 from constructs import Construct
 
-from ..constructs.webfinger_api import WebFingerApi
+from ..constructs.public_http_api import PublicHttpApi
+from ..models.asset_loader import AssetLoader
 from ..models.foundation_exports import FoundationExports
 from ..models.webfinger_config import WebFingerConfig
 
@@ -19,6 +20,7 @@ from ..models.webfinger_config import WebFingerConfig
 class WebFingerImports:
     cfg: WebFingerConfig
     shared: FoundationExports
+    assets: AssetLoader
     authentik_issuer_base: str
 
 
@@ -35,49 +37,34 @@ class WebFingerStack(Stack):
 
         cfg = imports.cfg
         shared = imports.shared
-        authentik_issuer_base = imports.authentik_issuer_base
+        oidc_issuer_url = (
+            f"{imports.authentik_issuer_base}/{cfg.oidc_issuer_application}/"
+        )
 
-        webfinger = WebFingerApi(
+        handler = lambda_.Function(
+            self,
+            "Handler",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="index.handler",
+            timeout=Duration.seconds(5),
+            code=lambda_.Code.from_asset(str(imports.assets.lambda_path("webfinger"))),
+            environment={
+                "WEBFINGER_SUBJECT": cfg.subject,
+                "WEBFINGER_ISSUER_URL": oidc_issuer_url,
+            },
+        )
+
+        public_api = PublicHttpApi(
             self,
             "Api",
-            subject=cfg.subject,
-            oidc_issuer_url=f"{authentik_issuer_base}/{cfg.oidc_issuer_application}/",
-        )
-
-        certificate = acm.Certificate(
-            self,
-            "Certificate",
-            domain_name=shared.public_domain,
-            validation=acm.CertificateValidation.from_dns(shared.public_zone),
-        )
-
-        domain = apigwv2.DomainName(
-            self,
-            "DomainName",
-            domain_name=shared.public_domain,
-            certificate=certificate,
-        )
-
-        apigwv2.ApiMapping(
-            self,
-            "ApiMapping",
-            api=webfinger.api,
-            domain_name=domain,
-            stage=webfinger.api.default_stage,
-        )
-
-        route53.ARecord(
-            self,
-            "AliasRecord",
+            fqdn=shared.public_domain,
+            a_record=shared.public_domain,
             zone=shared.public_zone,
-            record_name=shared.public_domain,
-            target=route53.RecordTarget.from_alias(
-                cast(
-                    route53.IAliasRecordTarget,
-                    route53_targets.ApiGatewayv2DomainProperties(
-                        domain.regional_domain_name,
-                        domain.regional_hosted_zone_id,
-                    ),
-                )
+        )
+        public_api.api.add_routes(
+            path="/.well-known/webfinger",
+            methods=[apigwv2.HttpMethod.GET],
+            integration=apigwv2_integrations.HttpLambdaIntegration(
+                "Integration", cast(lambda_.IFunction, handler)
             ),
         )

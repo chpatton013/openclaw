@@ -19,6 +19,7 @@ from constructs import Construct
 
 from ..constructs.fargate_service import PrivateEgressFargateService
 from ..constructs.public_http_alb import PublicHttpAlb
+from ..constructs.shared_volume_init import SharedVolumeInit
 from ..models.asset_loader import AssetLoader
 from ..models.data_exports import DataExports
 from ..models.foundation_exports import FoundationExports
@@ -167,53 +168,22 @@ class HeadscaleStack(Stack):
             ),
         )
 
-        headscale_service.task_defn.add_volume(name=NOISE_VOLUME)
-        headscale_service.container.add_mount_points(
-            ecs.MountPoint(
-                container_path=NOISE_MOUNT_PATH,
-                source_volume=NOISE_VOLUME,
-                read_only=False,
-            )
-        )
-
-        noise_init = headscale_service.task_defn.add_container(
+        SharedVolumeInit(
+            self,
             "NoiseKeyInit",
-            image=ecs.ContainerImage.from_registry(
-                "public.ecr.aws/aws-cli/aws-cli:latest"
-            ),
-            essential=False,
-            entry_point=["sh", "-c"],
-            command=[
-                "; ".join(
-                    [
-                        "set -eu",
-                        f'touch "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
-                        f'chmod 600 "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
-                        f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_ARN}}" --query SecretString --output text | base64 -d > "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
-                    ]
-                )
+            service=headscale_service,
+            volume_name=NOISE_VOLUME,
+            mount_path=NOISE_MOUNT_PATH,
+            shell_commands=[
+                f'touch "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
+                f'chmod 600 "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
+                f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_ARN}}" --query SecretString --output text | base64 -d > "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
             ],
             environment={"NOISE_SECRET_ARN": noise_secret.secret_arn},
-            logging=ecs.LogDrivers.aws_logs(
-                stream_prefix="headscale-noise-init",
-                log_group=headscale_service.log_group,
-            ),
-        )
-        noise_init.add_mount_points(
-            ecs.MountPoint(
-                container_path=NOISE_MOUNT_PATH,
-                source_volume=NOISE_VOLUME,
-                read_only=False,
-            )
+            stream_prefix="headscale-noise-init",
+            main_container_read_only=False,
         )
         noise_secret.grant_read(headscale_service.task_defn.task_role)
-
-        headscale_service.container.add_container_dependencies(
-            ecs.ContainerDependency(
-                container=noise_init,
-                condition=ecs.ContainerDependencyCondition.SUCCESS,
-            )
-        )
 
         headscale_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
 

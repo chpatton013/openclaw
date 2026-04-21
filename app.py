@@ -66,6 +66,7 @@ WebFingerStack(
     imports=WebFingerImports(
         cfg=cfg.webfinger,
         shared=shared,
+        assets=assets,
         authentik_issuer_base=authentik_issuer_base,
     ),
     env=env,
