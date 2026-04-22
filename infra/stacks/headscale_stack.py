@@ -32,6 +32,7 @@ SERVICE_DISCOVERY_SERVICE = "headscale"
 NOISE_VOLUME = "headscale-state"
 NOISE_MOUNT_PATH = "/var/lib/headscale"
 NOISE_KEY_FILENAME = "noise_private.key"
+CONFIG_FILENAME = "config.yaml"
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,8 @@ class HeadscaleStack(Stack):
             "HEADSCALE_LOG_LEVEL": cfg.log_level,
             "HEADSCALE_DISABLE_CHECK_UPDATES": "true",
             "HEADSCALE_NOISE_PRIVATE_KEY_PATH": f"{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}",
+            "HEADSCALE_PREFIXES_V4": "100.64.0.0/10",
+            "HEADSCALE_PREFIXES_V6": "fd7a:115c:a1e0::/48",
         }
 
         headscale_secrets = {
@@ -162,7 +165,11 @@ class HeadscaleStack(Stack):
                         name=SERVICE_DISCOVERY_SERVICE,
                     ),
                 ],
-                command=["serve"],
+                command=[
+                    "serve",
+                    "--config",
+                    f"{NOISE_MOUNT_PATH}/{CONFIG_FILENAME}",
+                ],
                 environment=headscale_env,
                 secrets=headscale_secrets,
             ),
@@ -177,7 +184,16 @@ class HeadscaleStack(Stack):
             shell_commands=[
                 f'touch "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
                 f'chmod 600 "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
-                f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_ARN}}" --query SecretString --output text | base64 -d > "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
+                " | ".join(
+                    [
+                        f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_ARN}}" --query SecretString --output text',
+                        "base64 -d",
+                        "od -An -v -t x1",
+                        'tr -d "[:space:]"',
+                        'awk \'{{print "privkey:" $0}}\' >"{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
+                    ]
+                ),
+                f'printf "noise:\\n  private_key_path: {NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}\\n" >"{NOISE_MOUNT_PATH}/{CONFIG_FILENAME}"',
             ],
             environment={"NOISE_SECRET_ARN": noise_secret.secret_arn},
             stream_prefix="headscale-noise-init",

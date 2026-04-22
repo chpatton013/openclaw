@@ -62,15 +62,25 @@ class PrivateEgressFargateService(Construct):
 
     def grant_pull_through_cache(self, namespace: str) -> None:
         stack = Stack.of(self)
-        self.task_defn.obtain_execution_role().add_to_principal_policy(
+        execution_role = self.task_defn.obtain_execution_role()
+        repo_arn = (
+            f"arn:aws:ecr:{stack.region}:{stack.account}:repository/{namespace}/*"
+        )
+        execution_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["ecr:GetAuthorizationToken"],
+                resources=["*"],
+            )
+        )
+        execution_role.add_to_principal_policy(
             iam.PolicyStatement(
                 actions=[
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
                     "ecr:CreateRepository",
                     "ecr:BatchImportUpstreamImage",
                 ],
-                resources=[
-                    f"arn:aws:ecr:{stack.region}:{stack.account}"
-                    f":repository/{namespace}/*"
-                ],
+                resources=[repo_arn],
             )
         )
