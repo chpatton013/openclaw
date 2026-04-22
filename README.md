@@ -88,8 +88,8 @@ registration.
         - Confirm and Assign
 - Tailscale (SaaS-side)
     - Create a new account with OIDC provider
-        - Email address: tailscale@chiiiirs.com
-        - WebFinger URL (automatically populated to https://chiiiirs.com/.well-known/webfinger)
+        - Email address: tailscale@example.com
+        - WebFinger URL (automatically populated to https://example.com/.well-known/webfinger)
         - Which identity provider: Authentik
         - Get OIDC issuer
         - Client ID / Client Secret: use the values stored in the
@@ -98,10 +98,9 @@ registration.
         - Sign up with OIDC
     - Authentik redirecting to Tailscale
         - Continue
-- `chiiiirs.net` registrar
-    - After the `chiiiirs.net` hosted zone is created, copy its 4 NS records
-      from Route53 into the registrar DNS config so that MagicDNS under
-      `ts.chiiiirs.net` is reachable.
+- Domain registrars
+    - After the hosted zone are created, copy the 4 NS records from Route53 into
+    the registrar DNS config.
 
 ## Manual Bootstrapping
 
@@ -238,7 +237,7 @@ DAG. But they can never declare a cyclical dependency.
           one-shot Fargate task (`headscale apikeys create`) the first time
           the stack is deployed
     - MagicDNS base domain: `{headscale.private_subdomain}.{foundation.private_domain}`
-      (e.g. `ts.chiiiirs.net`)
+      (e.g. `ts.example.net`)
 - [OpenClaw Stack](./infra/stacks/openclaw_stack.py)
     - Agentic assistant platform
     - Resources:
