@@ -81,7 +81,7 @@ class DataStack(Stack):
             timeout=Duration.minutes(2),
             vpc=foundation.vpc,
             vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
         )
         self.secret.grant_read(init_fn)
