@@ -6,6 +6,7 @@ import secrets
 import string
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
@@ -52,11 +53,6 @@ def prompt_required(label: str, default: str | None = None) -> str:
         print("A value is required.", file=sys.stderr)
 
 
-def generate_oidc_client_id() -> str:
-    alphabet = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(40))
-
-
 def prompt_password_or_default(label: str) -> str | None:
     """Ask for a password twice. Empty input means 'use the auto-generated default'."""
     while True:
@@ -69,10 +65,43 @@ def prompt_password_or_default(label: str) -> str | None:
         print("Passwords did not match; try again.", file=sys.stderr)
 
 
+def generate_oidc_client_id() -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(40))
+
+
+def resolve_required(
+    args: argparse.Namespace,
+    flag: str,
+    label: str,
+    *,
+    default: str | None = None,
+) -> str:
+    return resolve_arg(getattr(args, flag)) or prompt_required(label, default=default)
+
+
+def resolve_secret(args: argparse.Namespace, flag: str, label: str) -> str:
+    return resolve_arg(getattr(args, flag)) or getpass.getpass(f"{label}: ")
+
+
+def resolve_optional_password(
+    args: argparse.Namespace, flag: str, label: str
+) -> str | None:
+    # Re-prompt only when the raw flag is None, so `--flag @empty.file` still
+    # produces "" without interactively prompting.
+    if getattr(args, flag) is None:
+        return prompt_password_or_default(label)
+    return resolve_arg(getattr(args, flag))
+
+
+def resolve_or_generate(
+    args: argparse.Namespace, flag: str, gen: Callable[[], str]
+) -> str:
+    return resolve_arg(getattr(args, flag)) or gen()
+
+
 @dataclass
 class Inputs:
-    public_domain: str
-    private_domain: str
     ghcr_username: str
     ghcr_access_token: str
     dockerhub_username: str
@@ -95,109 +124,79 @@ class Inputs:
     vaultwarden_smtp_password: str | None
 
 
-def collect_inputs(
-    args: argparse.Namespace, public_domain: str, private_domain: str
-) -> Inputs:
-    ghcr_username = resolve_arg(args.ghcr_username) or prompt_required(
-        "GitHub username (for ghcr.io pull-through cache)"
-    )
-    ghcr_access_token = resolve_arg(args.ghcr_access_token) or getpass.getpass(
-        "GitHub PAT with read:packages scope: "
-    )
-
-    dockerhub_username = resolve_arg(args.dockerhub_username) or prompt_required(
-        "Docker Hub username (for docker.io pull-through cache)"
-    )
-    dockerhub_access_token = resolve_arg(
-        args.dockerhub_access_token
-    ) or getpass.getpass("Docker Hub PAT: ")
-
-    data_database_username = resolve_arg(
-        args.data_database_username
-    ) or prompt_required("Data database master username", default="postgres")
-
-    data_database_password = resolve_arg(args.data_database_password)
-    if args.data_database_password is None:
-        data_database_password = prompt_password_or_default(
-            "Data database master password"
-        )
-
-    authentik_secret_key = resolve_arg(args.authentik_secret_key)
-    if args.authentik_secret_key is None:
-        authentik_secret_key = prompt_password_or_default("Authentik secret key")
-
-    authentik_bootstrap_email = resolve_arg(
-        args.authentik_bootstrap_email
-    ) or prompt_required("Authentik bootstrap email")
-
-    authentik_bootstrap_password = resolve_arg(args.authentik_bootstrap_password)
-    if args.authentik_bootstrap_password is None:
-        authentik_bootstrap_password = prompt_password_or_default(
-            "Authentik bootstrap password"
-        )
-
-    authentik_smtp_username = resolve_arg(
-        args.authentik_smtp_username
-    ) or prompt_required("Authentik SMTP username", default="authentik")
-
-    authentik_smtp_password = resolve_arg(args.authentik_smtp_password)
-    if args.authentik_smtp_password is None:
-        authentik_smtp_password = prompt_password_or_default("Authentik SMTP password")
-
-    vaultwarden_admin_token = resolve_arg(args.vaultwarden_admin_token)
-    if args.vaultwarden_admin_token is None:
-        vaultwarden_admin_token = prompt_password_or_default("Vaultwarden admin token")
-
-    vaultwarden_smtp_username = resolve_arg(
-        args.vaultwarden_smtp_username
-    ) or prompt_required("Vaultwarden SMTP username", default="vaultwarden")
-
-    vaultwarden_smtp_password = resolve_arg(args.vaultwarden_smtp_password)
-    if args.vaultwarden_smtp_password is None:
-        vaultwarden_smtp_password = prompt_password_or_default(
-            "Vaultwarden SMTP password"
-        )
-
-    tailscale_oidc_client_id = resolve_arg(
-        args.tailscale_oidc_client_id
-    ) or prompt_required("Tailscale OIDC client ID (from Authentik)")
-    tailscale_oidc_client_secret = resolve_arg(
-        args.tailscale_oidc_client_secret
-    ) or getpass.getpass("Tailscale OIDC client secret (from Authentik): ")
-
-    headscale_oidc_client_id = (
-        resolve_arg(args.headscale_oidc_client_id) or generate_oidc_client_id()
-    )
-    headscale_oidc_client_secret = resolve_arg(args.headscale_oidc_client_secret)
-
-    headplane_oidc_client_id = (
-        resolve_arg(args.headplane_oidc_client_id) or generate_oidc_client_id()
-    )
-    headplane_oidc_client_secret = resolve_arg(args.headplane_oidc_client_secret)
-
+def collect_inputs(args: argparse.Namespace) -> Inputs:
     return Inputs(
-        public_domain=public_domain,
-        private_domain=private_domain,
-        ghcr_username=ghcr_username,
-        ghcr_access_token=ghcr_access_token,
-        dockerhub_username=dockerhub_username,
-        dockerhub_access_token=dockerhub_access_token,
-        data_database_username=data_database_username,
-        data_database_password=data_database_password,
-        authentik_secret_key=authentik_secret_key,
-        authentik_bootstrap_email=authentik_bootstrap_email,
-        authentik_bootstrap_password=authentik_bootstrap_password,
-        authentik_smtp_username=authentik_smtp_username,
-        authentik_smtp_password=authentik_smtp_password,
-        tailscale_oidc_client_id=tailscale_oidc_client_id,
-        tailscale_oidc_client_secret=tailscale_oidc_client_secret,
-        headscale_oidc_client_id=headscale_oidc_client_id,
-        headscale_oidc_client_secret=headscale_oidc_client_secret,
-        headplane_oidc_client_id=headplane_oidc_client_id,
-        headplane_oidc_client_secret=headplane_oidc_client_secret,
-        vaultwarden_admin_token=vaultwarden_admin_token,
-        vaultwarden_smtp_username=vaultwarden_smtp_username,
-        vaultwarden_smtp_password=vaultwarden_smtp_password,
+        ghcr_username=resolve_required(
+            args, "ghcr_username", "GitHub username (for ghcr.io pull-through cache)"
+        ),
+        ghcr_access_token=resolve_secret(
+            args, "ghcr_access_token", "GitHub PAT with read:packages scope"
+        ),
+        dockerhub_username=resolve_required(
+            args,
+            "dockerhub_username",
+            "Docker Hub username (for docker.io pull-through cache)",
+        ),
+        dockerhub_access_token=resolve_secret(
+            args, "dockerhub_access_token", "Docker Hub PAT"
+        ),
+        data_database_username=resolve_required(
+            args,
+            "data_database_username",
+            "Data database master username",
+            default="postgres",
+        ),
+        data_database_password=resolve_optional_password(
+            args, "data_database_password", "Data database master password"
+        ),
+        authentik_secret_key=resolve_optional_password(
+            args, "authentik_secret_key", "Authentik secret key"
+        ),
+        authentik_bootstrap_email=resolve_required(
+            args, "authentik_bootstrap_email", "Authentik bootstrap email"
+        ),
+        authentik_bootstrap_password=resolve_optional_password(
+            args, "authentik_bootstrap_password", "Authentik bootstrap password"
+        ),
+        authentik_smtp_username=resolve_required(
+            args,
+            "authentik_smtp_username",
+            "Authentik SMTP username",
+            default="authentik",
+        ),
+        authentik_smtp_password=resolve_optional_password(
+            args, "authentik_smtp_password", "Authentik SMTP password"
+        ),
+        tailscale_oidc_client_id=resolve_required(
+            args,
+            "tailscale_oidc_client_id",
+            "Tailscale OIDC client ID (from Authentik)",
+        ),
+        tailscale_oidc_client_secret=resolve_secret(
+            args,
+            "tailscale_oidc_client_secret",
+            "Tailscale OIDC client secret (from Authentik)",
+        ),
+        headscale_oidc_client_id=resolve_or_generate(
+            args, "headscale_oidc_client_id", generate_oidc_client_id
+        ),
+        headscale_oidc_client_secret=resolve_arg(args.headscale_oidc_client_secret),
+        headplane_oidc_client_id=resolve_or_generate(
+            args, "headplane_oidc_client_id", generate_oidc_client_id
+        ),
+        headplane_oidc_client_secret=resolve_arg(args.headplane_oidc_client_secret),
+        vaultwarden_admin_token=resolve_optional_password(
+            args, "vaultwarden_admin_token", "Vaultwarden admin token"
+        ),
+        vaultwarden_smtp_username=resolve_required(
+            args,
+            "vaultwarden_smtp_username",
+            "Vaultwarden SMTP username",
+            default="vaultwarden",
+        ),
+        vaultwarden_smtp_password=resolve_optional_password(
+            args, "vaultwarden_smtp_password", "Vaultwarden SMTP password"
+        ),
     )
 
 
@@ -212,7 +211,7 @@ def run(cmd: list[str], label: str, stdin_value: str | None = None) -> None:
         sys.exit(result.returncode)
 
 
-def write_secret_cmd(
+def _write_secret_cmd(
     secret_name: str,
     *,
     template: dict | None = None,
@@ -235,6 +234,40 @@ def write_secret_cmd(
     elif length is not None:
         cmd.extend([f"--length={length}"])
     return cmd
+
+
+def write_secret(
+    name: str,
+    *,
+    template: dict | None = None,
+    key: str | None = None,
+    provided: str | None = None,
+    length: int | None = None,
+    bytes_: int | None = None,
+    exclude_punctuation: bool = False,
+) -> None:
+    """
+    Write a Secrets Manager secret.
+
+    If `provided` is not None, that value is written via stdin (including
+    empty string). Otherwise the secret is generated using `length` / `bytes_`
+    / `exclude_punctuation`, which act as a fallback spec and are ignored when
+    `provided` is set.
+    """
+    label = f"write-secret {name}"
+    if provided is not None:
+        cmd = _write_secret_cmd(name, template=template, key=key, use_stdin=True)
+        run(cmd, label, stdin_value=provided)
+        return
+    cmd = _write_secret_cmd(
+        name,
+        template=template,
+        key=key,
+        length=length,
+        bytes_=bytes_,
+        exclude_punctuation=exclude_punctuation,
+    )
+    run(cmd, label)
 
 
 def main() -> int:
@@ -268,154 +301,76 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = load_config(CONFIG_PATH)
-    inputs = collect_inputs(
-        args,
-        public_domain=cfg.foundation.public_domain,
-        private_domain=cfg.foundation.private_domain,
+    public_domain = cfg.foundation.public_domain
+    private_domain = cfg.foundation.private_domain
+    inputs = collect_inputs(args)
+
+    run([str(CREATE_HOSTED_ZONE), public_domain], "create-hosted-zone (public)")
+    run([str(CREATE_HOSTED_ZONE), private_domain], "create-hosted-zone (private)")
+
+    write_secret(
+        "ecr-pullthroughcache/ghcr",
+        template={"username": inputs.ghcr_username},
+        key="accessToken",
+        provided=inputs.ghcr_access_token,
+    )
+    write_secret(
+        "ecr-pullthroughcache/dockerhub",
+        template={"username": inputs.dockerhub_username},
+        key="accessToken",
+        provided=inputs.dockerhub_access_token,
     )
 
-    run(
-        [str(CREATE_HOSTED_ZONE), inputs.public_domain],
-        "create-hosted-zone (public)",
+    write_secret(
+        "data/database",
+        template={"username": inputs.data_database_username},
+        key="password",
+        provided=inputs.data_database_password,
+        length=32,
+        exclude_punctuation=True,
     )
-    run(
-        [str(CREATE_HOSTED_ZONE), inputs.private_domain],
-        "create-hosted-zone (private)",
-    )
-
-    run(
-        write_secret_cmd(
-            "ecr-pullthroughcache/ghcr",
-            template={"username": inputs.ghcr_username},
-            key="accessToken",
-            use_stdin=True,
-        ),
-        "write-secret ecr-pullthroughcache/ghcr",
-        stdin_value=inputs.ghcr_access_token,
-    )
-
-    run(
-        write_secret_cmd(
-            "ecr-pullthroughcache/dockerhub",
-            template={"username": inputs.dockerhub_username},
-            key="accessToken",
-            use_stdin=True,
-        ),
-        "write-secret ecr-pullthroughcache/dockerhub",
-        stdin_value=inputs.dockerhub_access_token,
-    )
-
-    data_database_template = {"username": inputs.data_database_username}
-    if inputs.data_database_password is not None:
-        run(
-            write_secret_cmd(
-                "data/database",
-                template=data_database_template,
-                key="password",
-                exclude_punctuation=True,
-                use_stdin=True,
-            ),
-            "write-secret data/database",
-            stdin_value=inputs.data_database_password,
-        )
-    else:
-        run(
-            write_secret_cmd(
-                "data/database",
-                template=data_database_template,
-                key="password",
-                length=32,
-                exclude_punctuation=True,
-            ),
-            "write-secret data/database",
-        )
 
     for service in ("authentik", "headscale", "vaultwarden"):
-        secret_name = f"{service}/database"
-        run(
-            write_secret_cmd(
-                secret_name,
-                template={"username": service},
-                key="password",
-                length=32,
-                exclude_punctuation=True,
-            ),
-            f"write-secret {secret_name}",
+        write_secret(
+            f"{service}/database",
+            template={"username": service},
+            key="password",
+            length=32,
+            exclude_punctuation=True,
         )
 
-    if inputs.authentik_secret_key is not None:
-        run(
-            write_secret_cmd("authentik/secret-key", use_stdin=True),
-            "write-secret authentik/secret-key",
-            stdin_value=inputs.authentik_secret_key,
-        )
-    else:
-        run(
-            write_secret_cmd(
-                "authentik/secret-key", length=50, exclude_punctuation=True
-            ),
-            "write-secret authentik/secret-key",
-        )
+    write_secret(
+        "authentik/secret-key",
+        provided=inputs.authentik_secret_key,
+        length=50,
+        exclude_punctuation=True,
+    )
 
-    authentik_bootstrap_template = {
-        "email": inputs.authentik_bootstrap_email,
-        "username": "akadmin",
-    }
-    if inputs.authentik_bootstrap_password is not None:
-        run(
-            write_secret_cmd(
-                "authentik/bootstrap",
-                template=authentik_bootstrap_template,
-                key="password",
-                use_stdin=True,
-            ),
-            "write-secret authentik/bootstrap",
-            stdin_value=inputs.authentik_bootstrap_password,
-        )
-    else:
-        run(
-            write_secret_cmd(
-                "authentik/bootstrap",
-                template=authentik_bootstrap_template,
-                key="password",
-                length=32,
-            ),
-            "write-secret authentik/bootstrap",
-        )
+    write_secret(
+        "authentik/bootstrap",
+        template={
+            "email": inputs.authentik_bootstrap_email,
+            "username": "akadmin",
+        },
+        key="password",
+        provided=inputs.authentik_bootstrap_password,
+        length=32,
+    )
 
-    authentik_smtp_template = {"username": inputs.authentik_smtp_username}
-    if inputs.authentik_smtp_password is not None:
-        run(
-            write_secret_cmd(
-                "authentik/smtp",
-                template=authentik_smtp_template,
-                key="password",
-                use_stdin=True,
-            ),
-            "write-secret authentik/smtp",
-            stdin_value=inputs.authentik_smtp_password,
-        )
-    else:
-        run(
-            write_secret_cmd(
-                "authentik/smtp",
-                template=authentik_smtp_template,
-                key="password",
-                length=32,
-                exclude_punctuation=True,
-            ),
-            "write-secret authentik/smtp",
-        )
+    write_secret(
+        "authentik/smtp",
+        template={"username": inputs.authentik_smtp_username},
+        key="password",
+        provided=inputs.authentik_smtp_password,
+        length=32,
+        exclude_punctuation=True,
+    )
 
-    run(
-        write_secret_cmd(
-            "authentik/oidc/tailscale",
-            template={"client_id": inputs.tailscale_oidc_client_id},
-            key="client_secret",
-            use_stdin=True,
-        ),
-        "write-secret authentik/oidc/tailscale",
-        stdin_value=inputs.tailscale_oidc_client_secret,
+    write_secret(
+        "authentik/oidc/tailscale",
+        template={"client_id": inputs.tailscale_oidc_client_id},
+        key="client_secret",
+        provided=inputs.tailscale_oidc_client_secret,
     )
 
     for slug, client_id, client_secret in (
@@ -430,86 +385,36 @@ def main() -> int:
             inputs.headplane_oidc_client_secret,
         ),
     ):
-        secret_name = f"authentik/oidc/{slug}"
-        template = {"client_id": client_id}
-        if client_secret is not None:
-            run(
-                write_secret_cmd(
-                    secret_name,
-                    template=template,
-                    key="client_secret",
-                    use_stdin=True,
-                ),
-                f"write-secret {secret_name}",
-                stdin_value=client_secret,
-            )
-        else:
-            run(
-                write_secret_cmd(
-                    secret_name,
-                    template=template,
-                    key="client_secret",
-                    length=128,
-                    exclude_punctuation=True,
-                ),
-                f"write-secret {secret_name}",
-            )
+        write_secret(
+            f"authentik/oidc/{slug}",
+            template={"client_id": client_id},
+            key="client_secret",
+            provided=client_secret,
+            length=128,
+            exclude_punctuation=True,
+        )
 
-    run(
-        write_secret_cmd("headplane/cookie-secret", bytes_=32),
-        "write-secret headplane/cookie-secret",
-    )
-
-    run(
-        write_secret_cmd("headscale/noise-private-key", bytes_=32),
-        "write-secret headscale/noise-private-key",
-    )
-
+    write_secret("headplane/cookie-secret", bytes_=32)
+    write_secret("headscale/noise-private-key", bytes_=32)
     # Empty placeholder - the HeadscaleStack custom resource populates this
     # with the real API key after Headscale is up.
-    run(
-        write_secret_cmd("headscale/admin-api-key", use_stdin=True),
-        "write-secret headscale/admin-api-key",
-        stdin_value="",
+    write_secret("headscale/admin-api-key", provided="")
+
+    write_secret(
+        "vaultwarden/admin-token",
+        provided=inputs.vaultwarden_admin_token,
+        length=64,
+        exclude_punctuation=True,
     )
 
-    if inputs.vaultwarden_admin_token is not None:
-        run(
-            write_secret_cmd("vaultwarden/admin-token", use_stdin=True),
-            "write-secret vaultwarden/admin-token",
-            stdin_value=inputs.vaultwarden_admin_token,
-        )
-    else:
-        run(
-            write_secret_cmd(
-                "vaultwarden/admin-token", length=64, exclude_punctuation=True
-            ),
-            "write-secret vaultwarden/admin-token",
-        )
-
-    vaultwarden_smtp_template = {"username": inputs.vaultwarden_smtp_username}
-    if inputs.vaultwarden_smtp_password is not None:
-        run(
-            write_secret_cmd(
-                "vaultwarden/smtp",
-                template=vaultwarden_smtp_template,
-                key="password",
-                use_stdin=True,
-            ),
-            "write-secret vaultwarden/smtp",
-            stdin_value=inputs.vaultwarden_smtp_password,
-        )
-    else:
-        run(
-            write_secret_cmd(
-                "vaultwarden/smtp",
-                template=vaultwarden_smtp_template,
-                key="password",
-                length=32,
-                exclude_punctuation=True,
-            ),
-            "write-secret vaultwarden/smtp",
-        )
+    write_secret(
+        "vaultwarden/smtp",
+        template={"username": inputs.vaultwarden_smtp_username},
+        key="password",
+        provided=inputs.vaultwarden_smtp_password,
+        length=32,
+        exclude_punctuation=True,
+    )
 
     return 0
 
