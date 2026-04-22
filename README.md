@@ -141,7 +141,7 @@ script for each step, or take matters into your own hands.
           (same shape as headscale)
         - `bin/aws-write-secret headscale/noise-private-key --bytes=32`
         - `bin/aws-write-secret headplane/cookie-secret --bytes=32`
-        - `bin/aws-write-secret headscale/admin-api-key -  # empty placeholder; populated by HeadscaleStack`
+        - `echo -n pending | bin/aws-write-secret headscale/admin-api-key -  # sentinel placeholder; replaced by HeadscaleStack`
         - `bin/aws-write-secret vaultwarden/database --template='{"username":"vaultwarden"}' --key=password --length=32 --exclude-punctuation`
         - `bin/aws-write-secret vaultwarden/admin-token --length=64 --exclude-punctuation`
         - `bin/aws-write-secret vaultwarden/smtp --template='{"username":"USERNAME"}' --key=password`

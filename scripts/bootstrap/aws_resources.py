@@ -7,7 +7,8 @@ import string
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+
+import boto3
 
 
 def find_repo_root(start: pathlib.Path) -> pathlib.Path:
@@ -100,104 +101,22 @@ def resolve_or_generate(
     return resolve_arg(getattr(args, flag)) or gen()
 
 
-@dataclass
-class Inputs:
-    ghcr_username: str
-    ghcr_access_token: str
-    dockerhub_username: str
-    dockerhub_access_token: str
-    data_database_username: str
-    data_database_password: str | None
-    authentik_secret_key: str | None
-    authentik_bootstrap_email: str
-    authentik_bootstrap_password: str | None
-    authentik_smtp_username: str
-    authentik_smtp_password: str | None
-    tailscale_oidc_client_id: str
-    tailscale_oidc_client_secret: str
-    headscale_oidc_client_id: str
-    headscale_oidc_client_secret: str | None
-    headplane_oidc_client_id: str
-    headplane_oidc_client_secret: str | None
-    vaultwarden_admin_token: str | None
-    vaultwarden_smtp_username: str
-    vaultwarden_smtp_password: str | None
+def fetch_existing_secrets() -> set[str]:
+    client = boto3.client("secretsmanager")
+    paginator = client.get_paginator("list_secrets")
+    names: set[str] = set()
+    for page in paginator.paginate():
+        for entry in page.get("SecretList", []):
+            names.add(entry["Name"])
+    return names
 
 
-def collect_inputs(args: argparse.Namespace) -> Inputs:
-    return Inputs(
-        ghcr_username=resolve_required(
-            args, "ghcr_username", "GitHub username (for ghcr.io pull-through cache)"
-        ),
-        ghcr_access_token=resolve_secret(
-            args, "ghcr_access_token", "GitHub PAT with read:packages scope"
-        ),
-        dockerhub_username=resolve_required(
-            args,
-            "dockerhub_username",
-            "Docker Hub username (for docker.io pull-through cache)",
-        ),
-        dockerhub_access_token=resolve_secret(
-            args, "dockerhub_access_token", "Docker Hub PAT"
-        ),
-        data_database_username=resolve_required(
-            args,
-            "data_database_username",
-            "Data database master username",
-            default="postgres",
-        ),
-        data_database_password=resolve_optional_password(
-            args, "data_database_password", "Data database master password"
-        ),
-        authentik_secret_key=resolve_optional_password(
-            args, "authentik_secret_key", "Authentik secret key"
-        ),
-        authentik_bootstrap_email=resolve_required(
-            args, "authentik_bootstrap_email", "Authentik bootstrap email"
-        ),
-        authentik_bootstrap_password=resolve_optional_password(
-            args, "authentik_bootstrap_password", "Authentik bootstrap password"
-        ),
-        authentik_smtp_username=resolve_required(
-            args,
-            "authentik_smtp_username",
-            "Authentik SMTP username",
-            default="authentik",
-        ),
-        authentik_smtp_password=resolve_optional_password(
-            args, "authentik_smtp_password", "Authentik SMTP password"
-        ),
-        tailscale_oidc_client_id=resolve_required(
-            args,
-            "tailscale_oidc_client_id",
-            "Tailscale OIDC client ID (from Authentik)",
-        ),
-        tailscale_oidc_client_secret=resolve_secret(
-            args,
-            "tailscale_oidc_client_secret",
-            "Tailscale OIDC client secret (from Authentik)",
-        ),
-        headscale_oidc_client_id=resolve_or_generate(
-            args, "headscale_oidc_client_id", generate_oidc_client_id
-        ),
-        headscale_oidc_client_secret=resolve_arg(args.headscale_oidc_client_secret),
-        headplane_oidc_client_id=resolve_or_generate(
-            args, "headplane_oidc_client_id", generate_oidc_client_id
-        ),
-        headplane_oidc_client_secret=resolve_arg(args.headplane_oidc_client_secret),
-        vaultwarden_admin_token=resolve_optional_password(
-            args, "vaultwarden_admin_token", "Vaultwarden admin token"
-        ),
-        vaultwarden_smtp_username=resolve_required(
-            args,
-            "vaultwarden_smtp_username",
-            "Vaultwarden SMTP username",
-            default="vaultwarden",
-        ),
-        vaultwarden_smtp_password=resolve_optional_password(
-            args, "vaultwarden_smtp_password", "Vaultwarden SMTP password"
-        ),
-    )
+def needs_write(name: str, existing: set[str]) -> bool:
+    """True if the secret is missing. If it exists, log the skip and return False."""
+    if name in existing:
+        print(f"secret '{name}' already exists; skipping", file=sys.stderr)
+        return False
+    return True
 
 
 def run(cmd: list[str], label: str, stdin_value: str | None = None) -> None:
@@ -275,8 +194,14 @@ def main() -> int:
         description=(
             "Interactive bootstrap: creates the hosted zone and seeds Authentik secrets. "
             "Domain is read from config.toml. Flag values prefixed with '@' are read "
-            "from the named file."
+            "from the named file. Pass --skip-if-exists to avoid prompting for inputs "
+            "whose secrets already exist in Secrets Manager."
         )
+    )
+    parser.add_argument(
+        "--skip-if-exists",
+        action="store_true",
+        help="Skip prompting and writing for secrets that already exist.",
     )
     parser.add_argument("--ghcr-username")
     parser.add_argument("--ghcr-access-token")
@@ -301,120 +226,194 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = load_config(CONFIG_PATH)
-    public_domain = cfg.foundation.public_domain
-    private_domain = cfg.foundation.private_domain
-    inputs = collect_inputs(args)
+    existing = fetch_existing_secrets() if args.skip_if_exists else set()
 
-    run([str(CREATE_HOSTED_ZONE), public_domain], "create-hosted-zone (public)")
-    run([str(CREATE_HOSTED_ZONE), private_domain], "create-hosted-zone (private)")
-
-    write_secret(
-        "ecr-pullthroughcache/ghcr",
-        template={"username": inputs.ghcr_username},
-        key="accessToken",
-        provided=inputs.ghcr_access_token,
+    run(
+        [str(CREATE_HOSTED_ZONE), cfg.foundation.public_domain],
+        "create-hosted-zone (public)",
     )
-    write_secret(
-        "ecr-pullthroughcache/dockerhub",
-        template={"username": inputs.dockerhub_username},
-        key="accessToken",
-        provided=inputs.dockerhub_access_token,
+    run(
+        [str(CREATE_HOSTED_ZONE), cfg.foundation.private_domain],
+        "create-hosted-zone (private)",
     )
 
-    write_secret(
-        "data/database",
-        template={"username": inputs.data_database_username},
-        key="password",
-        provided=inputs.data_database_password,
-        length=32,
-        exclude_punctuation=True,
-    )
-
-    for service in ("authentik", "headscale", "vaultwarden"):
+    if needs_write("ecr-pullthroughcache/ghcr", existing):
         write_secret(
-            f"{service}/database",
-            template={"username": service},
+            "ecr-pullthroughcache/ghcr",
+            template={
+                "username": resolve_required(
+                    args,
+                    "ghcr_username",
+                    "GitHub username (for ghcr.io pull-through cache)",
+                )
+            },
+            key="accessToken",
+            provided=resolve_secret(
+                args, "ghcr_access_token", "GitHub PAT with read:packages scope"
+            ),
+        )
+
+    if needs_write("ecr-pullthroughcache/dockerhub", existing):
+        write_secret(
+            "ecr-pullthroughcache/dockerhub",
+            template={
+                "username": resolve_required(
+                    args,
+                    "dockerhub_username",
+                    "Docker Hub username (for docker.io pull-through cache)",
+                )
+            },
+            key="accessToken",
+            provided=resolve_secret(args, "dockerhub_access_token", "Docker Hub PAT"),
+        )
+
+    if needs_write("data/database", existing):
+        write_secret(
+            "data/database",
+            template={
+                "username": resolve_required(
+                    args,
+                    "data_database_username",
+                    "Data database master username",
+                    default="postgres",
+                )
+            },
             key="password",
+            provided=resolve_optional_password(
+                args, "data_database_password", "Data database master password"
+            ),
             length=32,
             exclude_punctuation=True,
         )
 
-    write_secret(
-        "authentik/secret-key",
-        provided=inputs.authentik_secret_key,
-        length=50,
-        exclude_punctuation=True,
-    )
+    for service in ("authentik", "headscale", "vaultwarden"):
+        name = f"{service}/database"
+        if needs_write(name, existing):
+            write_secret(
+                name,
+                template={"username": service},
+                key="password",
+                length=32,
+                exclude_punctuation=True,
+            )
 
-    write_secret(
-        "authentik/bootstrap",
-        template={
-            "email": inputs.authentik_bootstrap_email,
-            "username": "akadmin",
-        },
-        key="password",
-        provided=inputs.authentik_bootstrap_password,
-        length=32,
-    )
-
-    write_secret(
-        "authentik/smtp",
-        template={"username": inputs.authentik_smtp_username},
-        key="password",
-        provided=inputs.authentik_smtp_password,
-        length=32,
-        exclude_punctuation=True,
-    )
-
-    write_secret(
-        "authentik/oidc/tailscale",
-        template={"client_id": inputs.tailscale_oidc_client_id},
-        key="client_secret",
-        provided=inputs.tailscale_oidc_client_secret,
-    )
-
-    for slug, client_id, client_secret in (
-        (
-            "headscale",
-            inputs.headscale_oidc_client_id,
-            inputs.headscale_oidc_client_secret,
-        ),
-        (
-            "headplane",
-            inputs.headplane_oidc_client_id,
-            inputs.headplane_oidc_client_secret,
-        ),
-    ):
+    if needs_write("authentik/secret-key", existing):
         write_secret(
-            f"authentik/oidc/{slug}",
-            template={"client_id": client_id},
-            key="client_secret",
-            provided=client_secret,
-            length=128,
+            "authentik/secret-key",
+            provided=resolve_optional_password(
+                args, "authentik_secret_key", "Authentik secret key"
+            ),
+            length=50,
             exclude_punctuation=True,
         )
 
-    write_secret("headplane/cookie-secret", bytes_=32)
-    write_secret("headscale/noise-private-key", bytes_=32)
-    # Empty placeholder - the HeadscaleStack custom resource populates this
-    # with the real API key after Headscale is up.
-    write_secret("headscale/admin-api-key", provided="")
+    if needs_write("authentik/bootstrap", existing):
+        write_secret(
+            "authentik/bootstrap",
+            template={
+                "email": resolve_required(
+                    args, "authentik_bootstrap_email", "Authentik bootstrap email"
+                ),
+                "username": "akadmin",
+            },
+            key="password",
+            provided=resolve_optional_password(
+                args, "authentik_bootstrap_password", "Authentik bootstrap password"
+            ),
+            length=32,
+        )
 
-    write_secret(
-        "vaultwarden/admin-token",
-        provided=inputs.vaultwarden_admin_token,
-        length=64,
-        exclude_punctuation=True,
-    )
+    if needs_write("authentik/smtp", existing):
+        write_secret(
+            "authentik/smtp",
+            template={
+                "username": resolve_required(
+                    args,
+                    "authentik_smtp_username",
+                    "Authentik SMTP username",
+                    default="authentik",
+                )
+            },
+            key="password",
+            provided=resolve_optional_password(
+                args, "authentik_smtp_password", "Authentik SMTP password"
+            ),
+            length=32,
+            exclude_punctuation=True,
+        )
 
-    write_secret(
-        "vaultwarden/smtp",
-        template={"username": inputs.vaultwarden_smtp_username},
-        key="password",
-        provided=inputs.vaultwarden_smtp_password,
-        length=32,
-        exclude_punctuation=True,
-    )
+    if needs_write("authentik/oidc/tailscale", existing):
+        write_secret(
+            "authentik/oidc/tailscale",
+            template={
+                "client_id": resolve_required(
+                    args,
+                    "tailscale_oidc_client_id",
+                    "Tailscale OIDC client ID (from Authentik)",
+                )
+            },
+            key="client_secret",
+            provided=resolve_secret(
+                args,
+                "tailscale_oidc_client_secret",
+                "Tailscale OIDC client secret (from Authentik)",
+            ),
+        )
+
+    for slug in ("headscale", "headplane"):
+        name = f"authentik/oidc/{slug}"
+        if needs_write(name, existing):
+            write_secret(
+                name,
+                template={
+                    "client_id": resolve_or_generate(
+                        args, f"{slug}_oidc_client_id", generate_oidc_client_id
+                    )
+                },
+                key="client_secret",
+                provided=resolve_arg(getattr(args, f"{slug}_oidc_client_secret")),
+                length=128,
+                exclude_punctuation=True,
+            )
+
+    if needs_write("headplane/cookie-secret", existing):
+        write_secret("headplane/cookie-secret", bytes_=32)
+    if needs_write("headscale/noise-private-key", existing):
+        write_secret("headscale/noise-private-key", bytes_=32)
+    # Placeholder - the HeadscaleStack custom resource replaces this with the
+    # real API key after Headscale is up. Secrets Manager rejects empty
+    # strings, so we write a sentinel that the lambda recognizes.
+    if needs_write("headscale/admin-api-key", existing):
+        write_secret("headscale/admin-api-key", provided="pending")
+
+    if needs_write("vaultwarden/admin-token", existing):
+        write_secret(
+            "vaultwarden/admin-token",
+            provided=resolve_optional_password(
+                args, "vaultwarden_admin_token", "Vaultwarden admin token"
+            ),
+            length=64,
+            exclude_punctuation=True,
+        )
+
+    if needs_write("vaultwarden/smtp", existing):
+        write_secret(
+            "vaultwarden/smtp",
+            template={
+                "username": resolve_required(
+                    args,
+                    "vaultwarden_smtp_username",
+                    "Vaultwarden SMTP username",
+                    default="vaultwarden",
+                )
+            },
+            key="password",
+            provided=resolve_optional_password(
+                args, "vaultwarden_smtp_password", "Vaultwarden SMTP password"
+            ),
+            length=32,
+            exclude_punctuation=True,
+        )
 
     return 0
 

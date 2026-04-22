@@ -16,11 +16,15 @@ SECRET_ID = os.environ["SECRET_ID"]
 CONTAINER_NAME = os.environ["CONTAINER_NAME"]
 
 
+PLACEHOLDER = "pending"
+
+
 def _current_secret() -> str:
     try:
-        return sm.get_secret_value(SecretId=SECRET_ID).get("SecretString", "")
+        value = sm.get_secret_value(SecretId=SECRET_ID).get("SecretString", "")
     except sm.exceptions.ResourceNotFoundException:
         return ""
+    return "" if value == PLACEHOLDER else value
 
 
 def _run_task() -> str:
