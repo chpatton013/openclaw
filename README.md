@@ -307,3 +307,4 @@ DAG. But they can never declare a cyclical dependency.
     - Be specific about which properties we want from shared and data exports
     - EFS and RDS backups
     - aws_resources.py should not pull secrets from secrets/ dir
+    - Add tests for cdk commands
