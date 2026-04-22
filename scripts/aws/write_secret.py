@@ -36,7 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Create or overwrite a Secrets Manager secret."
     )
     parser.add_argument("secret_name")
-    parser.add_argument("--overwrite", action="store_true")
+
+    existence_group = parser.add_mutually_exclusive_group()
+    existence_group.add_argument("--overwrite", action="store_true")
+    existence_group.add_argument("--skip-if-exists", action="store_true")
 
     exclude_group = parser.add_mutually_exclusive_group()
     exclude_group.add_argument("--exclude-punctuation", action="store_true")
@@ -76,6 +79,15 @@ def main() -> int:
             parser.error(f"--key '{args.key}' already present in --template")
 
     client = boto3.client("secretsmanager")
+
+    if args.skip_if_exists:
+        try:
+            client.describe_secret(SecretId=args.secret_name)
+            sys.stderr.write(f"Secret '{args.secret_name}' already exists; skipping.\n")
+            return 0
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
+                raise
 
     if args.input is not None:
         value = read_input(args.input)

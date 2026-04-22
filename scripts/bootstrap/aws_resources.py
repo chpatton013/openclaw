@@ -52,6 +52,11 @@ def prompt_required(label: str, default: str | None = None) -> str:
         print("A value is required.", file=sys.stderr)
 
 
+def generate_oidc_client_id() -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(40))
+
+
 def prompt_password_or_default(label: str) -> str | None:
     """Ask for a password twice. Empty input means 'use the auto-generated default'."""
     while True:
@@ -81,6 +86,10 @@ class Inputs:
     authentik_smtp_password: str | None
     tailscale_oidc_client_id: str
     tailscale_oidc_client_secret: str
+    headscale_oidc_client_id: str
+    headscale_oidc_client_secret: str | None
+    headplane_oidc_client_id: str
+    headplane_oidc_client_secret: str | None
     vaultwarden_admin_token: str | None
     vaultwarden_smtp_username: str
     vaultwarden_smtp_password: str | None
@@ -156,6 +165,16 @@ def collect_inputs(
         args.tailscale_oidc_client_secret
     ) or getpass.getpass("Tailscale OIDC client secret (from Authentik): ")
 
+    headscale_oidc_client_id = (
+        resolve_arg(args.headscale_oidc_client_id) or generate_oidc_client_id()
+    )
+    headscale_oidc_client_secret = resolve_arg(args.headscale_oidc_client_secret)
+
+    headplane_oidc_client_id = (
+        resolve_arg(args.headplane_oidc_client_id) or generate_oidc_client_id()
+    )
+    headplane_oidc_client_secret = resolve_arg(args.headplane_oidc_client_secret)
+
     return Inputs(
         public_domain=public_domain,
         private_domain=private_domain,
@@ -172,6 +191,10 @@ def collect_inputs(
         authentik_smtp_password=authentik_smtp_password,
         tailscale_oidc_client_id=tailscale_oidc_client_id,
         tailscale_oidc_client_secret=tailscale_oidc_client_secret,
+        headscale_oidc_client_id=headscale_oidc_client_id,
+        headscale_oidc_client_secret=headscale_oidc_client_secret,
+        headplane_oidc_client_id=headplane_oidc_client_id,
+        headplane_oidc_client_secret=headplane_oidc_client_secret,
         vaultwarden_admin_token=vaultwarden_admin_token,
         vaultwarden_smtp_username=vaultwarden_smtp_username,
         vaultwarden_smtp_password=vaultwarden_smtp_password,
@@ -199,7 +222,7 @@ def write_secret_cmd(
     exclude_punctuation: bool = False,
     use_stdin: bool = False,
 ) -> list[str]:
-    cmd = [str(WRITE_SECRET), secret_name]
+    cmd = [str(WRITE_SECRET), secret_name, "--skip-if-exists"]
     if template is not None:
         assert key is not None
         cmd.extend(["--template", json.dumps(template), "--key", key])
@@ -235,6 +258,10 @@ def main() -> int:
     parser.add_argument("--authentik-smtp-password")
     parser.add_argument("--tailscale-oidc-client-id")
     parser.add_argument("--tailscale-oidc-client-secret")
+    parser.add_argument("--headscale-oidc-client-id")
+    parser.add_argument("--headscale-oidc-client-secret")
+    parser.add_argument("--headplane-oidc-client-id")
+    parser.add_argument("--headplane-oidc-client-secret")
     parser.add_argument("--vaultwarden-admin-token")
     parser.add_argument("--vaultwarden-smtp-username")
     parser.add_argument("--vaultwarden-smtp-password")
@@ -391,20 +418,42 @@ def main() -> int:
         stdin_value=inputs.tailscale_oidc_client_secret,
     )
 
-    alphabet = string.ascii_letters + string.digits
-    for slug in ("headscale", "headplane"):
+    for slug, client_id, client_secret in (
+        (
+            "headscale",
+            inputs.headscale_oidc_client_id,
+            inputs.headscale_oidc_client_secret,
+        ),
+        (
+            "headplane",
+            inputs.headplane_oidc_client_id,
+            inputs.headplane_oidc_client_secret,
+        ),
+    ):
         secret_name = f"authentik/oidc/{slug}"
-        payload = json.dumps(
-            {
-                "client_id": "".join(secrets.choice(alphabet) for _ in range(40)),
-                "client_secret": "".join(secrets.choice(alphabet) for _ in range(128)),
-            }
-        )
-        run(
-            write_secret_cmd(secret_name, use_stdin=True),
-            f"write-secret {secret_name}",
-            stdin_value=payload,
-        )
+        template = {"client_id": client_id}
+        if client_secret is not None:
+            run(
+                write_secret_cmd(
+                    secret_name,
+                    template=template,
+                    key="client_secret",
+                    use_stdin=True,
+                ),
+                f"write-secret {secret_name}",
+                stdin_value=client_secret,
+            )
+        else:
+            run(
+                write_secret_cmd(
+                    secret_name,
+                    template=template,
+                    key="client_secret",
+                    length=128,
+                    exclude_punctuation=True,
+                ),
+                f"write-secret {secret_name}",
+            )
 
     run(
         write_secret_cmd("headplane/cookie-secret", bytes_=32),
