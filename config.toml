@@ -79,5 +79,4 @@ min_healthy_percent = 100
 
 [vaultwarden.smtp]
 host = "smtp.chiiiirs.com"
-port = 587
 from_email_address = "vaultwarden@chiiiirs.com"

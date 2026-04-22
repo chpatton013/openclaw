@@ -6,7 +6,6 @@ import secrets
 import string
 import subprocess
 import sys
-import tomllib
 from dataclasses import dataclass
 
 
@@ -25,8 +24,6 @@ HERE = pathlib.Path(__file__).parent
 REPO_ROOT = find_repo_root(HERE)
 BIN_DIR = REPO_ROOT / "bin"
 CONFIG_PATH = REPO_ROOT / "config.toml"
-AUTHENTIK_SECRETS_PATH = REPO_ROOT / "secrets" / "authentik.toml"
-DOCKER_SECRETS_PATH = REPO_ROOT / "secrets" / "docker.toml"
 CREATE_HOSTED_ZONE = BIN_DIR / "aws-create-hosted-zone"
 WRITE_SECRET = BIN_DIR / "aws-write-secret"
 
@@ -99,14 +96,12 @@ def collect_inputs(
         "GitHub PAT with read:packages scope: "
     )
 
-    with open(DOCKER_SECRETS_PATH, "rb") as f:
-        docker_secrets = tomllib.load(f)
-    dockerhub_access_token = (
-        resolve_arg(args.dockerhub_access_token) or docker_secrets["pat"]
-    )
     dockerhub_username = resolve_arg(args.dockerhub_username) or prompt_required(
         "Docker Hub username (for docker.io pull-through cache)"
     )
+    dockerhub_access_token = resolve_arg(
+        args.dockerhub_access_token
+    ) or getpass.getpass("Docker Hub PAT: ")
 
     data_database_username = resolve_arg(
         args.data_database_username
@@ -154,10 +149,12 @@ def collect_inputs(
             "Vaultwarden SMTP password"
         )
 
-    with open(AUTHENTIK_SECRETS_PATH, "rb") as f:
-        authentik_secrets = tomllib.load(f)
-    tailscale_oidc_client_id = authentik_secrets["tailscale"]["client_id"]
-    tailscale_oidc_client_secret = authentik_secrets["tailscale"]["client_secret"]
+    tailscale_oidc_client_id = resolve_arg(
+        args.tailscale_oidc_client_id
+    ) or prompt_required("Tailscale OIDC client ID (from Authentik)")
+    tailscale_oidc_client_secret = resolve_arg(
+        args.tailscale_oidc_client_secret
+    ) or getpass.getpass("Tailscale OIDC client secret (from Authentik): ")
 
     return Inputs(
         public_domain=public_domain,
@@ -236,6 +233,8 @@ def main() -> int:
     parser.add_argument("--authentik-bootstrap-password")
     parser.add_argument("--authentik-smtp-username")
     parser.add_argument("--authentik-smtp-password")
+    parser.add_argument("--tailscale-oidc-client-id")
+    parser.add_argument("--tailscale-oidc-client-secret")
     parser.add_argument("--vaultwarden-admin-token")
     parser.add_argument("--vaultwarden-smtp-username")
     parser.add_argument("--vaultwarden-smtp-password")

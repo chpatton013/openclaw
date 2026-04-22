@@ -9,4 +9,8 @@ __pycache__
 .cdk.staging
 cdk.out
 
+# Per-user CDK context cache (account/region/zone lookups). Each deployer
+# resolves this against their own AWS account on first synth.
+cdk.context.json
+
 secrets/**

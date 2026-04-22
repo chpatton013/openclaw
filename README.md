@@ -92,8 +92,8 @@ registration.
         - WebFinger URL (automatically populated to https://chiiiirs.com/.well-known/webfinger)
         - Which identity provider: Authentik
         - Get OIDC issuer
-        - Client ID / Client Secret: use the values in `secrets/authentik.toml`
-          (also stored in `authentik/oidc/tailscale`)
+        - Client ID / Client Secret: use the values stored in the
+          `authentik/oidc/tailscale` Secrets Manager entry
         - Prompts: consent
         - Sign up with OIDC
     - Authentik redirecting to Tailscale
@@ -125,7 +125,7 @@ script for each step, or take matters into your own hands.
         - TODO
     - Helper script
         - `bin/aws-write-secret ecr-pullthroughcache/ghcr --template='{"username":"GITHUB_USERNAME"}' --key=accessToken  # GitHub PAT with read:packages scope`
-        - `bin/aws-write-secret ecr-pullthroughcache/dockerhub --template='{"username":"DOCKERHUB_USERNAME"}' --key=accessToken  # Docker Hub PAT; token from secrets/docker.toml`
+        - `bin/aws-write-secret ecr-pullthroughcache/dockerhub --template='{"username":"DOCKERHUB_USERNAME"}' --key=accessToken  # Docker Hub PAT`
         - `bin/aws-write-secret authentik/secret-key --length=50 --exclude-punctuation`
         - `bin/aws-write-secret authentik/bootstrap --template='{"email":"EMAIL"}' --key=password`
         - `bin/aws-write-secret data/database --template='{"username":"USERNAME"}' --key=password`
@@ -134,7 +134,7 @@ script for each step, or take matters into your own hands.
         - `bin/aws-write-secret headscale/database --template='{"username":"headscale"}' --key=password --length=32 --exclude-punctuation`
         - `bin/aws-write-secret authentik/smtp --template='{"username":"USERNAME"}' --key=password`
         - `bin/aws-write-secret authentik/oidc/tailscale --template='{"client_id":"CLIENT_ID"}' --key=client_secret`
-          (values from `secrets/authentik.toml`)
+          (values from the `tailscale` provider registered in Authentik)
         - `bin/aws-write-secret authentik/oidc/headscale -`
           (JSON blob: `{"client_id":"...","client_secret":"..."}` — blueprint
           seeds both into Authentik on first apply)
@@ -298,13 +298,7 @@ DAG. But they can never declare a cyclical dependency.
           DB auth until there's a real need — the sidecar cost outweighs
           the rotation cost at single-digit-service scale.
     - Vaultwarden
-        - Get stuff out of __init__.py
-        - Dedupe smtp config with authentik
         - Enable SSO
-    - See about deleting __init__.py files entirely
-    - Remove use_ssl/use_tls from smtp config; there's one right answer
     - Get rid of the Imports types and just use kwargs
     - Be specific about which properties we want from shared and data exports
     - EFS and RDS backups
-    - aws_resources.py should not pull secrets from secrets/ dir
-    - Add tests for cdk commands

@@ -32,11 +32,10 @@ class TestSynth(unittest.TestCase):
             app,
             cfg=load_config(REPO_ROOT / "config.toml"),
             assets=AssetLoader(REPO_ROOT),
-            # Match the account/region cached in cdk.context.json so
-            # HostedZone.from_lookup hits the cache for the public zone. The
-            # private zone falls back to a dummy value, which is fine for
-            # synth validation.
-            env=cdk.Environment(account="848195118240", region="us-west-2"),
+            # Placeholder env. HostedZone.from_lookup falls back to a dummy
+            # value when context isn't cached and no resolver is attached,
+            # which is fine for synth validation (we're not deploying).
+            env=cdk.Environment(account="000000000000", region="us-east-1"),
         )
         cls._assembly = app.synth()
 
