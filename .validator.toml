@@ -27,6 +27,9 @@ include_files = ["**/*.py"]
 [validator.python-filename]
 include_files = ["**/*.py"]
 
+[validator.python-fstring]
+include_files = ["**/*.py"]
+
 [validator.python-shadow-import]
 include_files = ["**/*.py"]
 

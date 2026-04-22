@@ -190,7 +190,7 @@ class HeadscaleStack(Stack):
                         "base64 -d",
                         "od -An -v -t x1",
                         'tr -d "[:space:]"',
-                        'awk \'{{print "privkey:" $0}}\' >"{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
+                        f'awk \'{{print "privkey:" $0}}\' >"{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
                     ]
                 ),
                 f'printf "noise:\\n  private_key_path: {NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}\\n" >"{NOISE_MOUNT_PATH}/{CONFIG_FILENAME}"',
