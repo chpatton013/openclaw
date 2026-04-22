@@ -26,7 +26,7 @@ def build_app(
         f"{cfg.headscale.headplane_subdomain}.{cfg.foundation.public_domain}"
     )
 
-    shared = FoundationStack(
+    foundation = FoundationStack(
         app,
         "FoundationStack",
         imports=FoundationImports(cfg=cfg.foundation),
@@ -37,7 +37,7 @@ def build_app(
         "DataStack",
         imports=DataImports(
             cfg=cfg.data,
-            shared=shared,
+            foundation=foundation,
             databases=[cfg.authentik.db, cfg.headscale.db, cfg.vaultwarden.db],
             assets=assets,
         ),
@@ -48,7 +48,7 @@ def build_app(
         "AuthentikStack",
         imports=AuthentikImports(
             cfg=cfg.authentik,
-            shared=shared,
+            foundation=foundation,
             data=data,
             assets=assets,
             tailscale_redirect_uri="https://login.tailscale.com/a/oauth_response",
@@ -62,7 +62,7 @@ def build_app(
         "WebFingerStack",
         imports=WebFingerImports(
             cfg=cfg.webfinger,
-            shared=shared,
+            foundation=foundation,
             assets=assets,
             authentik_issuer_base=authentik_issuer_base,
         ),
@@ -73,7 +73,7 @@ def build_app(
         "HeadscaleStack",
         imports=HeadscaleImports(
             cfg=cfg.headscale,
-            shared=shared,
+            foundation=foundation,
             data=data,
             assets=assets,
             authentik_issuer_base=authentik_issuer_base,
@@ -85,7 +85,7 @@ def build_app(
         "VaultwardenStack",
         imports=VaultwardenImports(
             cfg=cfg.vaultwarden,
-            shared=shared,
+            foundation=foundation,
             data=data,
         ),
         env=env,

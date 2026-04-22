@@ -37,7 +37,7 @@ NOISE_KEY_FILENAME = "noise_private.key"
 @dataclass(frozen=True)
 class HeadscaleImports:
     cfg: HeadscaleConfig
-    shared: FoundationExports
+    foundation: FoundationExports
     data: DataExports
     assets: AssetLoader
     authentik_issuer_base: str
@@ -55,14 +55,14 @@ class HeadscaleStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         cfg = imports.cfg
-        shared = imports.shared
+        foundation = imports.foundation
         data = imports.data
         assets = imports.assets
         authentik_issuer_base = imports.authentik_issuer_base
 
-        headscale_fqdn = f"{cfg.headscale_subdomain}.{shared.public_domain}"
-        headplane_fqdn = f"{cfg.headplane_subdomain}.{shared.public_domain}"
-        base_domain = f"{cfg.dns_subdomain}.{shared.private_domain}"
+        headscale_fqdn = f"{cfg.headscale_subdomain}.{foundation.public_domain}"
+        headplane_fqdn = f"{cfg.headplane_subdomain}.{foundation.public_domain}"
+        base_domain = f"{cfg.dns_subdomain}.{foundation.private_domain}"
         headscale_oidc_issuer = (
             f"{authentik_issuer_base}/{cfg.oidc_issuer_application}/"
         )
@@ -97,7 +97,7 @@ class HeadscaleStack(Stack):
             self,
             "DnsNamespace",
             name=SERVICE_DISCOVERY_NAMESPACE,
-            vpc=shared.vpc,
+            vpc=foundation.vpc,
         )
 
         ###
@@ -148,11 +148,11 @@ class HeadscaleStack(Stack):
             memory_limit_mib=cfg.headscale.memory_limit_mib,
             desired_count=cfg.headscale.desired_count,
             min_healthy_percent=cfg.headscale.min_healthy_percent,
-            vpc=shared.vpc,
-            cluster=shared.cluster,
+            vpc=foundation.vpc,
+            cluster=foundation.cluster,
             container_kwargs=dict(
                 image=ecs.ContainerImage.from_registry(
-                    f"{shared.ghcr_mirror_base}/juanfont/headscale"
+                    f"{foundation.ghcr_mirror_base}/juanfont/headscale"
                     f":{cfg.headscale_image_version}"
                 ),
                 port_mappings=[
@@ -185,7 +185,7 @@ class HeadscaleStack(Stack):
         )
         noise_secret.grant_read(headscale_service.task_defn.task_role)
 
-        headscale_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
+        headscale_service.grant_pull_through_cache(foundation.ghcr_mirror_namespace)
 
         headscale_service.service.enable_cloud_map(
             cloud_map_namespace=namespace,
@@ -229,11 +229,11 @@ class HeadscaleStack(Stack):
             memory_limit_mib=cfg.headplane.memory_limit_mib,
             desired_count=cfg.headplane.desired_count,
             min_healthy_percent=cfg.headplane.min_healthy_percent,
-            vpc=shared.vpc,
-            cluster=shared.cluster,
+            vpc=foundation.vpc,
+            cluster=foundation.cluster,
             container_kwargs=dict(
                 image=ecs.ContainerImage.from_registry(
-                    f"{shared.ghcr_mirror_base}/tale/headplane"
+                    f"{foundation.ghcr_mirror_base}/tale/headplane"
                     f":{cfg.headplane_image_version}"
                 ),
                 port_mappings=[
@@ -247,7 +247,7 @@ class HeadscaleStack(Stack):
             ),
         )
 
-        headplane_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
+        headplane_service.grant_pull_through_cache(foundation.ghcr_mirror_namespace)
 
         ###
         # ALB and routing
@@ -257,8 +257,8 @@ class HeadscaleStack(Stack):
             "PublicHttpAlb",
             fqdn=headscale_fqdn,
             a_record=cfg.headscale_subdomain,
-            zone=shared.public_zone,
-            vpc=shared.vpc,
+            zone=foundation.public_zone,
+            vpc=foundation.vpc,
             additional_fqdns=[headplane_fqdn],
         )
 
@@ -334,9 +334,11 @@ class HeadscaleStack(Stack):
             handler="handler",
             timeout=Duration.minutes(10),
             environment={
-                "CLUSTER_ARN": shared.cluster.cluster_arn,
+                "CLUSTER_ARN": foundation.cluster.cluster_arn,
                 "TASK_DEFINITION_ARN": headscale_service.task_defn.task_definition_arn,
-                "SUBNET_IDS": ",".join(s.subnet_id for s in shared.vpc.private_subnets),
+                "SUBNET_IDS": ",".join(
+                    s.subnet_id for s in foundation.vpc.private_subnets
+                ),
                 "SECURITY_GROUP_IDS": headscale_service.security_group.security_group_id,
                 "SECRET_ID": admin_api_key_secret.secret_name,
                 "CONTAINER_NAME": headscale_service.container.container_name,

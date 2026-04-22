@@ -27,7 +27,7 @@ from ..models.foundation_exports import FoundationExports
 @dataclass(frozen=True)
 class AuthentikImports:
     cfg: AuthentikConfig
-    shared: FoundationExports
+    foundation: FoundationExports
     data: DataExports
     assets: AssetLoader
     tailscale_redirect_uri: str
@@ -57,7 +57,7 @@ class AuthentikStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         cfg = imports.cfg
-        shared = imports.shared
+        foundation = imports.foundation
         data = imports.data
         assets = imports.assets
 
@@ -179,7 +179,7 @@ class AuthentikStack(Stack):
         }
 
         app_image = ecs.ContainerImage.from_registry(
-            f"{shared.ghcr_mirror_base}/goauthentik/server:{cfg.image_version}"
+            f"{foundation.ghcr_mirror_base}/goauthentik/server:{cfg.image_version}"
         )
         health_check_path = "/-/health/live/"
 
@@ -191,8 +191,8 @@ class AuthentikStack(Stack):
             memory_limit_mib=cfg.server.memory_limit_mib,
             desired_count=cfg.server.desired_count,
             min_healthy_percent=cfg.server.min_healthy_percent,
-            vpc=shared.vpc,
-            cluster=shared.cluster,
+            vpc=foundation.vpc,
+            cluster=foundation.cluster,
             container_kwargs=dict(
                 image=app_image,
                 port_mappings=[
@@ -221,8 +221,8 @@ class AuthentikStack(Stack):
             memory_limit_mib=cfg.worker.memory_limit_mib,
             desired_count=cfg.worker.desired_count,
             min_healthy_percent=cfg.worker.min_healthy_percent,
-            vpc=shared.vpc,
-            cluster=shared.cluster,
+            vpc=foundation.vpc,
+            cluster=foundation.cluster,
             container_kwargs=dict(
                 image=app_image,
                 command=["worker"],
@@ -239,8 +239,8 @@ class AuthentikStack(Stack):
             ),
         )
 
-        server_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
-        worker_service.grant_pull_through_cache(shared.ghcr_mirror_namespace)
+        server_service.grant_pull_through_cache(foundation.ghcr_mirror_namespace)
+        worker_service.grant_pull_through_cache(foundation.ghcr_mirror_namespace)
 
         for svc, init_id, init_prefix in [
             (
@@ -271,10 +271,10 @@ class AuthentikStack(Stack):
         alb = PublicHttpAlb(
             self,
             "PublicHttpAlb",
-            fqdn=f"{cfg.subdomain}.{shared.public_domain}",
+            fqdn=f"{cfg.subdomain}.{foundation.public_domain}",
             a_record=cfg.subdomain,
-            zone=shared.public_zone,
-            vpc=shared.vpc,
+            zone=foundation.public_zone,
+            vpc=foundation.vpc,
         )
 
         alb.https_listener.add_targets(

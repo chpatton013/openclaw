@@ -24,7 +24,7 @@ VAULTWARDEN_HTTP_PORT = 80
 @dataclass(frozen=True)
 class VaultwardenImports:
     cfg: VaultwardenConfig
-    shared: FoundationExports
+    foundation: FoundationExports
     data: DataExports
 
 
@@ -40,10 +40,10 @@ class VaultwardenStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         cfg = imports.cfg
-        shared = imports.shared
+        foundation = imports.foundation
         data = imports.data
 
-        fqdn = f"{cfg.subdomain}.{shared.public_domain}"
+        fqdn = f"{cfg.subdomain}.{foundation.public_domain}"
 
         ###
         # Secrets
@@ -62,12 +62,12 @@ class VaultwardenStack(Stack):
         # EFS for /data
 
         efs_sg = ec2.SecurityGroup(
-            self, "EfsSecurityGroup", vpc=shared.vpc, allow_all_outbound=True
+            self, "EfsSecurityGroup", vpc=foundation.vpc, allow_all_outbound=True
         )
         filesystem = efs.FileSystem(
             self,
             "DataFs",
-            vpc=shared.vpc,
+            vpc=foundation.vpc,
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
@@ -113,7 +113,7 @@ class VaultwardenStack(Stack):
         }
 
         image = ecs.ContainerImage.from_registry(
-            f"{shared.dockerhub_mirror_base}/vaultwarden/server:{cfg.image_version}"
+            f"{foundation.dockerhub_mirror_base}/vaultwarden/server:{cfg.image_version}"
         )
 
         # Vaultwarden needs DATABASE_URL as a single string. ECS secrets cannot
@@ -134,8 +134,8 @@ class VaultwardenStack(Stack):
             memory_limit_mib=cfg.task.memory_limit_mib,
             desired_count=cfg.task.desired_count,
             min_healthy_percent=cfg.task.min_healthy_percent,
-            vpc=shared.vpc,
-            cluster=shared.cluster,
+            vpc=foundation.vpc,
+            cluster=foundation.cluster,
             container_kwargs=dict(
                 image=image,
                 port_mappings=[
@@ -149,7 +149,7 @@ class VaultwardenStack(Stack):
                 secrets=secrets,
             ),
         )
-        service.grant_pull_through_cache(shared.dockerhub_mirror_namespace)
+        service.grant_pull_through_cache(foundation.dockerhub_mirror_namespace)
 
         ###
         # EFS mount
@@ -185,8 +185,8 @@ class VaultwardenStack(Stack):
             "PublicHttpAlb",
             fqdn=fqdn,
             a_record=cfg.subdomain,
-            zone=shared.public_zone,
-            vpc=shared.vpc,
+            zone=foundation.public_zone,
+            vpc=foundation.vpc,
         )
 
         alb.https_listener.add_targets(

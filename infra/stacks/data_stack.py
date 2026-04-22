@@ -27,7 +27,7 @@ from ..models.instance_type import INSTANCE_TYPES
 @dataclass(frozen=True)
 class DataImports:
     cfg: DataConfig
-    shared: FoundationExports
+    foundation: FoundationExports
     databases: list[DbConfig]
     assets: AssetLoader
 
@@ -44,7 +44,7 @@ class DataStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         cfg = imports.cfg
-        shared = imports.shared
+        foundation = imports.foundation
         databases = imports.databases
         assets = imports.assets
 
@@ -56,7 +56,7 @@ class DataStack(Stack):
             self,
             "Database",
             secret=self.secret,
-            vpc=shared.vpc,
+            vpc=foundation.vpc,
             port=cfg.instance.port,
             instance_kwargs=dict(
                 engine=rds.DatabaseInstanceEngine.postgres(
@@ -79,7 +79,7 @@ class DataStack(Stack):
             index="index.py",
             handler="handler",
             timeout=Duration.minutes(2),
-            vpc=shared.vpc,
+            vpc=foundation.vpc,
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
             ),

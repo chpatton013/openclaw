@@ -216,8 +216,6 @@ DAG. But they can never declare a cyclical dependency.
         - Storage: S3 media bucket, RDS PostGres database
         - Services: Authentik Server and Worker Fargate service containers
         - Network: publicly-accessible Application Load Balancer
-    - TODO:
-        - Setup an ECR to mirror Authentik container image
 - [Data Stack](./infra/stacks/data_stack.py)
     - Shared Postgres for stateful services (Authentik, Headscale, ...).
     - Resources:
@@ -265,7 +263,6 @@ DAG. But they can never declare a cyclical dependency.
         - Wire up Authentik SSO (add `vaultwarden.yaml` blueprint,
           `authentik/oidc/vaultwarden` secret, `SSO_ENABLED` env)
 - Planned AWS stacks:
-    - WebFinger
     - searXNG
     - Matrix Synapse
     - mail
@@ -278,7 +275,7 @@ DAG. But they can never declare a cyclical dependency.
         - **Secrets Manager hosted rotation**
           (`secret.add_rotation_schedule(...,
           hosted_rotation=secretsmanager.HostedRotation.postgres_single_user(
-          vpc=shared.vpc), automatically_after=Duration.days(30))`). AWS-managed
+          vpc=foundation.vpc), automatically_after=Duration.days(30))`). AWS-managed
           Lambda rotates the password in Postgres and writes the new value
           back to the secret. Downside: services that read secrets at task
           boot (all ECS tasks here) will keep the old password until redeploy
@@ -300,5 +297,5 @@ DAG. But they can never declare a cyclical dependency.
     - Vaultwarden
         - Enable SSO
     - Get rid of the Imports types and just use kwargs
-    - Be specific about which properties we want from shared and data exports
+    - Be specific about which properties we want from foundation and data exports
     - EFS and RDS backups

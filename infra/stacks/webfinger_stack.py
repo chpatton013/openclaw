@@ -19,7 +19,7 @@ from ..models.webfinger_config import WebFingerConfig
 @dataclass(frozen=True)
 class WebFingerImports:
     cfg: WebFingerConfig
-    shared: FoundationExports
+    foundation: FoundationExports
     assets: AssetLoader
     authentik_issuer_base: str
 
@@ -36,7 +36,7 @@ class WebFingerStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         cfg = imports.cfg
-        shared = imports.shared
+        foundation = imports.foundation
         oidc_issuer_url = (
             f"{imports.authentik_issuer_base}/{cfg.oidc_issuer_application}/"
         )
@@ -57,9 +57,9 @@ class WebFingerStack(Stack):
         public_api = PublicHttpApi(
             self,
             "Api",
-            fqdn=shared.public_domain,
-            a_record=shared.public_domain,
-            zone=shared.public_zone,
+            fqdn=foundation.public_domain,
+            a_record=foundation.public_domain,
+            zone=foundation.public_zone,
         )
         public_api.api.add_routes(
             path="/.well-known/webfinger",
