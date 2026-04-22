@@ -41,3 +41,22 @@ class PrivateIsolatedDatabaseInstance(Construct):
             port=port,
             **instance_kwargs,
         )
+
+    def grant_connect(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        peer: ec2.IConnectable,
+        description: str | None = None,
+    ) -> None:
+        # Import the DB security group into `scope` (the consumer stack) so
+        # the CfnSecurityGroupIngress is placed there, not in DataStack. This
+        # inverts the cross-stack reference direction and avoids a cycle.
+        imported = ec2.SecurityGroup.from_security_group_id(
+            scope,
+            id,
+            self.security_group.security_group_id,
+            mutable=True,
+        )
+        imported.connections.allow_from(peer, ec2.Port.tcp(self.port), description)

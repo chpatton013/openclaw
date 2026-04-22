@@ -307,8 +307,11 @@ class HeadscaleStack(Stack):
             ec2.Port.tcp(HEADPLANE_HTTP_PORT),
             "ALB to Headplane HTTP",
         )
-        data.database.instance.connections.allow_default_port_from(
-            headscale_service.service
+        data.database.grant_connect(
+            self,
+            "HeadscaleDbIngress",
+            peer=headscale_service.service,
+            description="Headscale to DB",
         )
 
         ###

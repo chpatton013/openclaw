@@ -206,4 +206,9 @@ class VaultwardenStack(Stack):
             ec2.Port.tcp(VAULTWARDEN_HTTP_PORT),
             "ALB to Vaultwarden HTTP",
         )
-        data.database.instance.connections.allow_default_port_from(service.service)
+        data.database.grant_connect(
+            self,
+            "VaultwardenDbIngress",
+            peer=service.service,
+            description="Vaultwarden to DB",
+        )

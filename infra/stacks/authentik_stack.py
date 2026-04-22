@@ -306,11 +306,17 @@ class AuthentikStack(Stack):
         worker_service.task_defn.add_to_task_role_policy(bucket_access_policy_statement)
 
         # Allow server and worker services to connect to DB instance.
-        data.database.instance.connections.allow_default_port_from(
-            server_service.service
+        data.database.grant_connect(
+            self,
+            "ServerDbIngress",
+            peer=server_service.service,
+            description="Authentik server to DB",
         )
-        data.database.instance.connections.allow_default_port_from(
-            worker_service.service
+        data.database.grant_connect(
+            self,
+            "WorkerDbIngress",
+            peer=worker_service.service,
+            description="Authentik worker to DB",
         )
 
         # Allow ALB to connect to server service HTTP port.
