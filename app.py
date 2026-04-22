@@ -11,6 +11,7 @@ from infra.stacks.data_stack import DataImports, DataStack
 from infra.stacks.foundation_stack import FoundationImports, FoundationStack
 from infra.stacks.headscale_stack import HeadscaleImports, HeadscaleStack
 from infra.stacks.openclaw_stack import OpenClawStack
+from infra.stacks.vaultwarden_stack import VaultwardenImports, VaultwardenStack
 from infra.stacks.webfinger_stack import WebFingerImports, WebFingerStack
 
 REPO_ROOT = pathlib.Path(__file__).parent
@@ -41,7 +42,7 @@ data = DataStack(
     imports=DataImports(
         cfg=cfg.data,
         shared=shared,
-        databases=[cfg.authentik.db, cfg.headscale.db],
+        databases=[cfg.authentik.db, cfg.headscale.db, cfg.vaultwarden.db],
         assets=assets,
     ),
     env=env,
@@ -80,6 +81,16 @@ HeadscaleStack(
         data=data,
         assets=assets,
         authentik_issuer_base=authentik_issuer_base,
+    ),
+    env=env,
+)
+VaultwardenStack(
+    app,
+    "VaultwardenStack",
+    imports=VaultwardenImports(
+        cfg=cfg.vaultwarden,
+        shared=shared,
+        data=data,
     ),
     env=env,
 )

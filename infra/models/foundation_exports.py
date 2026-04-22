@@ -17,3 +17,5 @@ class FoundationExports:
     cluster: ecs.ICluster
     ghcr_mirror_base: str
     ghcr_mirror_namespace: str
+    dockerhub_mirror_base: str
+    dockerhub_mirror_namespace: str

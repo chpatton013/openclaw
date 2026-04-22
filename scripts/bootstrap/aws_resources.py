@@ -26,6 +26,7 @@ REPO_ROOT = find_repo_root(HERE)
 BIN_DIR = REPO_ROOT / "bin"
 CONFIG_PATH = REPO_ROOT / "config.toml"
 AUTHENTIK_SECRETS_PATH = REPO_ROOT / "secrets" / "authentik.toml"
+DOCKER_SECRETS_PATH = REPO_ROOT / "secrets" / "docker.toml"
 CREATE_HOSTED_ZONE = BIN_DIR / "aws-create-hosted-zone"
 WRITE_SECRET = BIN_DIR / "aws-write-secret"
 
@@ -72,6 +73,8 @@ class Inputs:
     private_domain: str
     ghcr_username: str
     ghcr_access_token: str
+    dockerhub_username: str
+    dockerhub_access_token: str
     data_database_username: str
     data_database_password: str | None
     authentik_secret_key: str | None
@@ -81,6 +84,9 @@ class Inputs:
     authentik_smtp_password: str | None
     tailscale_oidc_client_id: str
     tailscale_oidc_client_secret: str
+    vaultwarden_admin_token: str | None
+    vaultwarden_smtp_username: str
+    vaultwarden_smtp_password: str | None
 
 
 def collect_inputs(
@@ -91,6 +97,15 @@ def collect_inputs(
     )
     ghcr_access_token = resolve_arg(args.ghcr_access_token) or getpass.getpass(
         "GitHub PAT with read:packages scope: "
+    )
+
+    with open(DOCKER_SECRETS_PATH, "rb") as f:
+        docker_secrets = tomllib.load(f)
+    dockerhub_access_token = (
+        resolve_arg(args.dockerhub_access_token) or docker_secrets["pat"]
+    )
+    dockerhub_username = resolve_arg(args.dockerhub_username) or prompt_required(
+        "Docker Hub username (for docker.io pull-through cache)"
     )
 
     data_database_username = resolve_arg(
@@ -125,6 +140,20 @@ def collect_inputs(
     if args.authentik_smtp_password is None:
         authentik_smtp_password = prompt_password_or_default("Authentik SMTP password")
 
+    vaultwarden_admin_token = resolve_arg(args.vaultwarden_admin_token)
+    if args.vaultwarden_admin_token is None:
+        vaultwarden_admin_token = prompt_password_or_default("Vaultwarden admin token")
+
+    vaultwarden_smtp_username = resolve_arg(
+        args.vaultwarden_smtp_username
+    ) or prompt_required("Vaultwarden SMTP username", default="vaultwarden")
+
+    vaultwarden_smtp_password = resolve_arg(args.vaultwarden_smtp_password)
+    if args.vaultwarden_smtp_password is None:
+        vaultwarden_smtp_password = prompt_password_or_default(
+            "Vaultwarden SMTP password"
+        )
+
     with open(AUTHENTIK_SECRETS_PATH, "rb") as f:
         authentik_secrets = tomllib.load(f)
     tailscale_oidc_client_id = authentik_secrets["tailscale"]["client_id"]
@@ -135,6 +164,8 @@ def collect_inputs(
         private_domain=private_domain,
         ghcr_username=ghcr_username,
         ghcr_access_token=ghcr_access_token,
+        dockerhub_username=dockerhub_username,
+        dockerhub_access_token=dockerhub_access_token,
         data_database_username=data_database_username,
         data_database_password=data_database_password,
         authentik_secret_key=authentik_secret_key,
@@ -144,6 +175,9 @@ def collect_inputs(
         authentik_smtp_password=authentik_smtp_password,
         tailscale_oidc_client_id=tailscale_oidc_client_id,
         tailscale_oidc_client_secret=tailscale_oidc_client_secret,
+        vaultwarden_admin_token=vaultwarden_admin_token,
+        vaultwarden_smtp_username=vaultwarden_smtp_username,
+        vaultwarden_smtp_password=vaultwarden_smtp_password,
     )
 
 
@@ -193,6 +227,8 @@ def main() -> int:
     )
     parser.add_argument("--ghcr-username")
     parser.add_argument("--ghcr-access-token")
+    parser.add_argument("--dockerhub-username")
+    parser.add_argument("--dockerhub-access-token")
     parser.add_argument("--data-database-username")
     parser.add_argument("--data-database-password")
     parser.add_argument("--authentik-secret-key")
@@ -200,6 +236,9 @@ def main() -> int:
     parser.add_argument("--authentik-bootstrap-password")
     parser.add_argument("--authentik-smtp-username")
     parser.add_argument("--authentik-smtp-password")
+    parser.add_argument("--vaultwarden-admin-token")
+    parser.add_argument("--vaultwarden-smtp-username")
+    parser.add_argument("--vaultwarden-smtp-password")
     args = parser.parse_args()
 
     cfg = load_config(CONFIG_PATH)
@@ -229,6 +268,17 @@ def main() -> int:
         stdin_value=inputs.ghcr_access_token,
     )
 
+    run(
+        write_secret_cmd(
+            "ecr-pullthroughcache/dockerhub",
+            template={"username": inputs.dockerhub_username},
+            key="accessToken",
+            use_stdin=True,
+        ),
+        "write-secret ecr-pullthroughcache/dockerhub",
+        stdin_value=inputs.dockerhub_access_token,
+    )
+
     data_database_template = {"username": inputs.data_database_username}
     if inputs.data_database_password is not None:
         run(
@@ -254,7 +304,7 @@ def main() -> int:
             "write-secret data/database",
         )
 
-    for service in ("authentik", "headscale"):
+    for service in ("authentik", "headscale", "vaultwarden"):
         secret_name = f"{service}/database"
         run(
             write_secret_cmd(
@@ -374,6 +424,44 @@ def main() -> int:
         "write-secret headscale/admin-api-key",
         stdin_value="",
     )
+
+    if inputs.vaultwarden_admin_token is not None:
+        run(
+            write_secret_cmd("vaultwarden/admin-token", use_stdin=True),
+            "write-secret vaultwarden/admin-token",
+            stdin_value=inputs.vaultwarden_admin_token,
+        )
+    else:
+        run(
+            write_secret_cmd(
+                "vaultwarden/admin-token", length=64, exclude_punctuation=True
+            ),
+            "write-secret vaultwarden/admin-token",
+        )
+
+    vaultwarden_smtp_template = {"username": inputs.vaultwarden_smtp_username}
+    if inputs.vaultwarden_smtp_password is not None:
+        run(
+            write_secret_cmd(
+                "vaultwarden/smtp",
+                template=vaultwarden_smtp_template,
+                key="password",
+                use_stdin=True,
+            ),
+            "write-secret vaultwarden/smtp",
+            stdin_value=inputs.vaultwarden_smtp_password,
+        )
+    else:
+        run(
+            write_secret_cmd(
+                "vaultwarden/smtp",
+                template=vaultwarden_smtp_template,
+                key="password",
+                length=32,
+                exclude_punctuation=True,
+            ),
+            "write-secret vaultwarden/smtp",
+        )
 
     return 0
 

@@ -16,6 +16,8 @@ from ..models.foundation_exports import FoundationExports
 
 GHCR_MIRROR_NAMESPACE = "ghcr"
 GHCR_CREDENTIAL_SECRET_NAME = "ecr-pullthroughcache/ghcr"
+DOCKERHUB_MIRROR_NAMESPACE = "dockerhub"
+DOCKERHUB_CREDENTIAL_SECRET_NAME = "ecr-pullthroughcache/dockerhub"
 
 
 @dataclass(frozen=True)
@@ -89,6 +91,22 @@ class FoundationStack(Stack):
             f"{GHCR_MIRROR_NAMESPACE}"
         )
 
+        dockerhub_credential_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "DockerHubCredentialSecret", DOCKERHUB_CREDENTIAL_SECRET_NAME
+        )
+        ecr.CfnPullThroughCacheRule(
+            self,
+            "DockerHubPullThroughCacheRule",
+            ecr_repository_prefix=DOCKERHUB_MIRROR_NAMESPACE,
+            upstream_registry_url="registry-1.docker.io",
+            upstream_registry="docker-hub",
+            credential_arn=dockerhub_credential_secret.secret_arn,
+        )
+        dockerhub_mirror_base = (
+            f"{Aws.ACCOUNT_ID}.dkr.ecr.{Aws.REGION}.amazonaws.com/"
+            f"{DOCKERHUB_MIRROR_NAMESPACE}"
+        )
+
         self.exports = FoundationExports(
             public_domain=cfg.public_domain,
             public_zone=public_zone,
@@ -98,4 +116,6 @@ class FoundationStack(Stack):
             cluster=cluster,
             ghcr_mirror_base=ghcr_mirror_base,
             ghcr_mirror_namespace=GHCR_MIRROR_NAMESPACE,
+            dockerhub_mirror_base=dockerhub_mirror_base,
+            dockerhub_mirror_namespace=DOCKERHUB_MIRROR_NAMESPACE,
         )

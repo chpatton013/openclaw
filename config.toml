@@ -62,3 +62,22 @@ cpu = 256
 memory_limit_mib = 512
 desired_count = 1
 min_healthy_percent = 100
+
+[vaultwarden]
+subdomain = "vaultwarden"
+image_version = "1.32.7"
+
+[vaultwarden.db]
+name = "vaultwarden"
+secret_name = "vaultwarden/database"
+
+[vaultwarden.task]
+cpu = 512
+memory_limit_mib = 1024
+desired_count = 1
+min_healthy_percent = 100
+
+[vaultwarden.smtp]
+host = "smtp.chiiiirs.com"
+port = 587
+from_email_address = "vaultwarden@chiiiirs.com"

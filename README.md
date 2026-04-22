@@ -125,6 +125,7 @@ script for each step, or take matters into your own hands.
         - TODO
     - Helper script
         - `bin/aws-write-secret ecr-pullthroughcache/ghcr --template='{"username":"GITHUB_USERNAME"}' --key=accessToken  # GitHub PAT with read:packages scope`
+        - `bin/aws-write-secret ecr-pullthroughcache/dockerhub --template='{"username":"DOCKERHUB_USERNAME"}' --key=accessToken  # Docker Hub PAT; token from secrets/docker.toml`
         - `bin/aws-write-secret authentik/secret-key --length=50 --exclude-punctuation`
         - `bin/aws-write-secret authentik/bootstrap --template='{"email":"EMAIL"}' --key=password`
         - `bin/aws-write-secret data/database --template='{"username":"USERNAME"}' --key=password`
@@ -142,6 +143,9 @@ script for each step, or take matters into your own hands.
         - `bin/aws-write-secret headscale/noise-private-key --bytes=32`
         - `bin/aws-write-secret headplane/cookie-secret --bytes=32`
         - `bin/aws-write-secret headscale/admin-api-key -  # empty placeholder; populated by HeadscaleStack`
+        - `bin/aws-write-secret vaultwarden/database --template='{"username":"vaultwarden"}' --key=password --length=32 --exclude-punctuation`
+        - `bin/aws-write-secret vaultwarden/admin-token --length=64 --exclude-punctuation`
+        - `bin/aws-write-secret vaultwarden/smtp --template='{"username":"USERNAME"}' --key=password`
 
 ## Development
 
@@ -250,10 +254,18 @@ DAG. But they can never declare a cyclical dependency.
           privileges to communicate with anything internal.
         - I may want to modify this setup to reuse the foundation VPC and host
           in Fargate. Will need to get more trust in the system first.
+- [Vaultwarden Stack](./infra/stacks/vaultwarden_stack.py)
+    - Self-hosted Bitwarden-compatible password vault
+    - Resources:
+        - Storage: EFS `/data`, shared Postgres via DataStack
+        - Services: single Fargate task (`vaultwarden/server`) pulled from
+          the Docker Hub pull-through cache
+        - Network: public ALB at `vaultwarden.<public_domain>`
+    - TODO:
+        - Wire up Authentik SSO (add `vaultwarden.yaml` blueprint,
+          `authentik/oidc/vaultwarden` secret, `SSO_ENABLED` env)
 - Planned AWS stacks:
     - WebFinger
-    - Vaultwarden
-    - Headscale
     - searXNG
     - Matrix Synapse
     - mail
@@ -285,3 +297,13 @@ DAG. But they can never declare a cyclical dependency.
           rotation with force-new-deployment on rotation events. Defer IAM
           DB auth until there's a real need — the sidecar cost outweighs
           the rotation cost at single-digit-service scale.
+    - Vaultwarden
+        - Get stuff out of __init__.py
+        - Dedupe smtp config with authentik
+        - Enable SSO
+    - See about deleting __init__.py files entirely
+    - Remove use_ssl/use_tls from smtp config; there's one right answer
+    - Get rid of the Imports types and just use kwargs
+    - Be specific about which properties we want from shared and data exports
+    - EFS and RDS backups
+    - aws_resources.py should not pull secrets from secrets/ dir
