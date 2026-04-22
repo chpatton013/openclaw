@@ -288,6 +288,14 @@ class HeadscaleStack(Stack):
                 healthy_http_codes="200,302",
             ),
         )
+        alb.https_listener.add_action(
+            "MisdirectedRequest",
+            action=elbv2.ListenerAction.fixed_response(
+                421,
+                content_type="text/plain",
+                message_body="Misdirected request",
+            ),
+        )
 
         ###
         # Security group wiring
