@@ -254,11 +254,11 @@ class HeadscaleStack(Stack):
         )
         # Fetch steps use ${{VAR}} (CDK escaping for literal ${VAR} in shell).
         # Secrets are JSON {"secret": "..."} so .secret is extracted via jq.
-        _fetch_cookie = f'COOKIE=$(aws secretsmanager get-secret-value --secret-id "${{HP_COOKIE_NAME}}" --query SecretString --output text | jq -r .secret)'
-        _fetch_apikey = f'APIKEY=$(aws secretsmanager get-secret-value --secret-id "${{HP_APIKEY_NAME}}" --query SecretString --output text | jq -r .secret)'
-        _fetch_oidc = f'OIDC=$(aws secretsmanager get-secret-value --secret-id "${{HP_OIDC_NAME}}" --query SecretString --output text)'
-        _parse_oidc = 'CLIENT_ID=$(echo "$OIDC" | jq -r .client_id)'
-        _parse_secret = 'CLIENT_SECRET=$(echo "$OIDC" | jq -r .client_secret)'
+        _fetch_cookie = f'COOKIE="$(aws secretsmanager get-secret-value --secret-id "${{HP_COOKIE_NAME}}" --query SecretString --output text | jq -r .secret)"'
+        _fetch_apikey = f'APIKEY="$(aws secretsmanager get-secret-value --secret-id "${{HP_APIKEY_NAME}}" --query SecretString --output text | jq -r .secret)"'
+        _fetch_oidc = f'OIDC="$(aws secretsmanager get-secret-value --secret-id "${{HP_OIDC_NAME}}" --query SecretString --output text)"'
+        _parse_oidc = 'CLIENT_ID="$(echo "$OIDC" | jq -r .client_id)"'
+        _parse_secret = 'CLIENT_SECRET="$(echo "$OIDC" | jq -r .client_secret)"'
         _export = "export COOKIE APIKEY CLIENT_ID CLIENT_SECRET"
         # Python heredoc: 'PYEOF' prevents shell expansion inside Python code.
         _pyeof = "\n".join(
