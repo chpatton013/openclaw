@@ -11,11 +11,14 @@ from aws_cdk import (
     aws_iam as iam,
     aws_lambda as lambda_,
     aws_lambda_python_alpha as lambda_python,
+    aws_logs as logs,
     aws_secretsmanager as secretsmanager,
     aws_servicediscovery as servicediscovery,
     custom_resources as cr,
 )
 from constructs import Construct
+
+from aws_cdk import aws_ecr_assets as ecr_assets
 
 from ..constructs.fargate_service import PrivateEgressFargateService
 from ..constructs.public_http_alb import PublicHttpAlb
@@ -33,6 +36,9 @@ NOISE_VOLUME = "headscale-state"
 NOISE_MOUNT_PATH = "/var/lib/headscale"
 NOISE_KEY_FILENAME = "noise_private.key"
 CONFIG_FILENAME = "config.yaml"
+
+HEADPLANE_CONFIG_VOLUME = "headplane-config"
+HEADPLANE_CONFIG_MOUNT_PATH = "/etc/headplane"
 
 
 @dataclass(frozen=True)
@@ -78,14 +84,24 @@ class HeadscaleStack(Stack):
         headscale_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "HeadscaleOidcSecret", "authentik/oidc/headscale"
         )
-        admin_api_key_secret = secretsmanager.Secret.from_secret_name_v2(
-            self, "AdminApiKeySecret", "headscale/admin-api-key"
+        # Use from_secret_complete_arn for secrets referenced without a JSON key.
+        # Without a JSON key, ECS puts the partial ARN in valueFrom, so Secrets Manager
+        # uses the partial ARN for the IAM check - and CDK's random-suffix grant doesn't match.
+        # The full ARN (with the random suffix) ensures the IAM check works correctly.
+        admin_api_key_secret = secretsmanager.Secret.from_secret_complete_arn(
+            self,
+            "AdminApiKeySecret",
+            "arn:aws:secretsmanager:us-west-2:848195118240:secret:headscale/admin-api-key-NL0uaY",
         )
-        headplane_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
-            self, "HeadplaneOidcSecret", "authentik/oidc/headplane"
+        headplane_oidc_secret = secretsmanager.Secret.from_secret_complete_arn(
+            self,
+            "HeadplaneOidcSecret",
+            "arn:aws:secretsmanager:us-west-2:848195118240:secret:authentik/oidc/headplane-NOuNGH",
         )
-        headplane_cookie_secret = secretsmanager.Secret.from_secret_name_v2(
-            self, "HeadplaneCookieSecret", "headplane/cookie-secret"
+        headplane_cookie_secret = secretsmanager.Secret.from_secret_complete_arn(
+            self,
+            "HeadplaneCookieSecret",
+            "arn:aws:secretsmanager:us-west-2:848195118240:secret:headplane/cookie-secret-reeOyo",
         )
         db_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "DbSecret", cfg.db.secret_name
@@ -212,31 +228,6 @@ class HeadscaleStack(Stack):
         ###
         # Headplane service
 
-        headplane_env = {
-            "HEADPLANE_SERVER_HOST": "0.0.0.0",
-            "HEADPLANE_SERVER_PORT": str(HEADPLANE_HTTP_PORT),
-            "HEADPLANE_BASE_URL": f"https://{headplane_fqdn}",
-            "HEADPLANE_HEADSCALE_URL": (
-                f"http://{SERVICE_DISCOVERY_SERVICE}.{SERVICE_DISCOVERY_NAMESPACE}:{HEADSCALE_HTTP_PORT}"
-            ),
-            "HEADPLANE_OIDC_ISSUER": headplane_oidc_issuer,
-        }
-
-        headplane_secrets = {
-            "HEADPLANE_HEADSCALE_API_KEY": ecs.Secret.from_secrets_manager(
-                admin_api_key_secret
-            ),
-            "HEADPLANE_COOKIE_SECRET": ecs.Secret.from_secrets_manager(
-                headplane_cookie_secret
-            ),
-            "HEADPLANE_OIDC_CLIENT_ID": ecs.Secret.from_secrets_manager(
-                headplane_oidc_secret, "client_id"
-            ),
-            "HEADPLANE_OIDC_CLIENT_SECRET": ecs.Secret.from_secrets_manager(
-                headplane_oidc_secret, "client_secret"
-            ),
-        }
-
         headplane_service = PrivateEgressFargateService(
             self,
             "HeadplaneService",
@@ -258,12 +249,85 @@ class HeadscaleStack(Stack):
                         host_port=HEADPLANE_HTTP_PORT,
                     ),
                 ],
-                environment=headplane_env,
-                secrets=headplane_secrets,
             ),
         )
 
         headplane_service.grant_pull_through_cache(foundation.ghcr_mirror_namespace)
+
+        # headplane v0.6+ requires a config file at /etc/headplane/config.yaml.
+        # The init container fetches secrets via AWS CLI + jq, then writes the
+        # config file using a Python heredoc (avoids shell quoting issues).
+        _headscale_url = (
+            f"http://{SERVICE_DISCOVERY_SERVICE}"
+            f".{SERVICE_DISCOVERY_NAMESPACE}:{HEADSCALE_HTTP_PORT}"
+        )
+        # Fetch steps use ${{VAR}} (CDK escaping for literal ${VAR} in shell).
+        _fetch_cookie = f'COOKIE=$(aws secretsmanager get-secret-value --secret-id "${{HP_COOKIE_ARN}}" --query SecretString --output text | cut -c1-32)'
+        _fetch_apikey = f'APIKEY=$(aws secretsmanager get-secret-value --secret-id "${{HP_APIKEY_ARN}}" --query SecretString --output text)'
+        _fetch_oidc = f'OIDC=$(aws secretsmanager get-secret-value --secret-id "${{HP_OIDC_ARN}}" --query SecretString --output text)'
+        _parse_oidc = 'CLIENT_ID=$(echo "$OIDC" | jq -r .client_id)'
+        _parse_secret = 'CLIENT_SECRET=$(echo "$OIDC" | jq -r .client_secret)'
+        _export = "export COOKIE APIKEY CLIENT_ID CLIENT_SECRET"
+        # Python heredoc: 'PYEOF' prevents shell expansion inside Python code.
+        _pyeof = "\n".join(
+            [
+                "python3 << 'PYEOF'",
+                "import json, os",
+                "cfg = {",
+                "    'server': {'host': '0.0.0.0', 'port': 3000,",
+                "               'cookie_secret': os.environ['COOKIE'], 'cookie_secure': False, 'data_path': '/tmp/headplane/'},",
+                "    'headscale': {'url': os.environ['HP_HEADSCALE_URL'], 'config_strict': False},",
+                "    'oidc': {",
+                "        'issuer': os.environ['HP_OIDC_ISSUER'],",
+                "        'client_id': os.environ['CLIENT_ID'],",
+                "        'client_secret': os.environ['CLIENT_SECRET'],",
+                "        'token_endpoint_auth_method': 'client_secret_basic',",
+                "        'redirect_uri': os.environ['HP_REDIRECT_URI'],",
+                "        'disable_api_key_login': False,",
+                "        'headscale_api_key': os.environ['APIKEY'],",
+                "    },",
+                "}",
+                "open('/etc/headplane/config.yaml', 'w').write(json.dumps(cfg, indent=2))",
+                "print('headplane config.yaml written')",
+                "PYEOF",
+            ]
+        )
+        SharedVolumeInit(
+            self,
+            "HeadplaneConfigInit",
+            service=headplane_service,
+            volume_name=HEADPLANE_CONFIG_VOLUME,
+            mount_path=HEADPLANE_CONFIG_MOUNT_PATH,
+            shell_commands=[
+                _fetch_cookie,
+                _fetch_apikey,
+                _fetch_oidc,
+                _parse_oidc,
+                _parse_secret,
+                _export,
+                _pyeof,
+            ],
+            environment={
+                "HP_COOKIE_ARN": headplane_cookie_secret.secret_arn,
+                "HP_APIKEY_ARN": admin_api_key_secret.secret_arn,
+                "HP_OIDC_ARN": headplane_oidc_secret.secret_arn,
+                "HP_HEADSCALE_URL": _headscale_url,
+                "HP_OIDC_ISSUER": headplane_oidc_issuer,
+                "HP_REDIRECT_URI": f"https://{headplane_fqdn}/oidc/callback",
+            },
+            stream_prefix="headplane-config-init",
+        )
+        # Grant the task role (used by init container) access to headplane secrets.
+        headplane_service.task_defn.task_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["secretsmanager:GetSecretValue"],
+                resources=[
+                    headplane_cookie_secret.secret_arn,
+                    headplane_oidc_secret.secret_arn,
+                    admin_api_key_secret.secret_arn,
+                ],
+            )
+        )
 
         ###
         # ALB and routing
@@ -300,8 +364,8 @@ class HeadscaleStack(Stack):
             targets=[headplane_service.service],
             deregistration_delay=Duration.seconds(30),
             health_check=elbv2.HealthCheck(
-                path="/",
-                healthy_http_codes="200,302",
+                path="/admin",
+                healthy_http_codes="200,302,401,403",
             ),
         )
         alb.https_listener.add_action(
@@ -341,6 +405,132 @@ class HeadscaleStack(Stack):
         ###
         # Admin API key custom resource
 
+        # Dedicated task definition for the one-off API key creation task.
+        # headscale 0.26+ apikeys create is a gRPC client requiring a running
+        # server, so we start headscale serve in the background, wait for gRPC
+        # to be ready, then run apikeys create against 127.0.0.1:50443.
+        api_key_task_defn = ecs.FargateTaskDefinition(
+            self,
+            "ApiKeyTaskDefn",
+            cpu=cfg.headscale.cpu,
+            memory_limit_mib=cfg.headscale.memory_limit_mib,
+            task_role=headscale_service.task_defn.task_role,
+            execution_role=headscale_service.task_defn.obtain_execution_role(),
+        )
+        api_key_task_defn.add_volume(name=NOISE_VOLUME)
+        api_key_log_group = logs.LogGroup(self, "ApiKeyLogGroup")
+        _config = f"{NOISE_MOUNT_PATH}/{CONFIG_FILENAME}"
+        _script = (
+            f"headscale serve --config {_config} &"
+            f" SERVER_PID=$!;"
+            f" for i in $(seq 1 30); do"
+            f"   headscale apikeys list --config {_config} >/dev/null 2>&1"
+            f"   && break; sleep 2; done;"
+            f" headscale apikeys create --config {_config}"
+            f" --expiration 0 --output json;"
+            f" STATUS=$?;"
+            f" kill $SERVER_PID 2>/dev/null;"
+            f" wait $SERVER_PID 2>/dev/null;"
+            f" exit $STATUS"
+        )
+        # Custom image: headscale binary on Alpine (which has /bin/sh).
+        # The production headscale image is distroless (no shell) so we build
+        # a thin wrapper that copies the static headscale binary into Alpine.
+        api_key_image = ecs.ContainerImage.from_docker_image_asset(
+            ecr_assets.DockerImageAsset(
+                self,
+                "ApiKeyImage",
+                directory=str(assets.docker_path("headscale_api_key")),
+                platform=ecr_assets.Platform.LINUX_AMD64,
+            )
+        )
+        api_key_container = api_key_task_defn.add_container(
+            "Container",
+            image=api_key_image,
+            entry_point=["sh", "-c"],
+            command=[_script],
+            environment=headscale_env,
+            secrets=headscale_secrets,
+            logging=ecs.LogDrivers.aws_logs(
+                stream_prefix="headscale",
+                log_group=api_key_log_group,
+            ),
+        )
+        api_key_container.add_mount_points(
+            ecs.MountPoint(
+                container_path=NOISE_MOUNT_PATH,
+                source_volume=NOISE_VOLUME,
+                read_only=False,
+            )
+        )
+        # Init container writes the noise key and minimal config to the volume.
+        _noise_init_cmds = [
+            f'touch "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
+            f'chmod 600 "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
+            " | ".join(
+                [
+                    f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_ARN}}" --query SecretString --output text',
+                    "base64 -d",
+                    "od -An -v -t x1",
+                    'tr -d "[:space:]"',
+                    f'awk \'{{print "privkey:" $0}}\' >"{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
+                ]
+            ),
+            f'printf "noise:\\n  private_key_path: {NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}\\n" >"{NOISE_MOUNT_PATH}/{CONFIG_FILENAME}"',
+        ]
+        api_key_init = api_key_task_defn.add_container(
+            "NoiseKeyInit",
+            image=ecs.ContainerImage.from_registry(
+                "public.ecr.aws/aws-cli/aws-cli:latest"
+            ),
+            essential=False,
+            entry_point=["sh", "-c"],
+            command=["; ".join(["set -eu", *_noise_init_cmds])],
+            environment={"NOISE_SECRET_ARN": noise_secret.secret_arn},
+            logging=ecs.LogDrivers.aws_logs(
+                stream_prefix="headscale-noise-init",
+                log_group=api_key_log_group,
+            ),
+        )
+        api_key_init.add_mount_points(
+            ecs.MountPoint(
+                container_path=NOISE_MOUNT_PATH,
+                source_volume=NOISE_VOLUME,
+                read_only=False,
+            )
+        )
+        api_key_container.add_container_dependencies(
+            ecs.ContainerDependency(
+                container=api_key_init,
+                condition=ecs.ContainerDependencyCondition.SUCCESS,
+            )
+        )
+        # Grant the task's role permission to read the noise secret.
+        noise_secret.grant_read(api_key_task_defn.task_role)
+        # Grant ECR pull-through cache access for the headscale image.
+        stack = Stack.of(self)
+        execution_role = api_key_task_defn.obtain_execution_role()
+        execution_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["ecr:GetAuthorizationToken"],
+                resources=["*"],
+            )
+        )
+        execution_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
+                    "ecr:CreateRepository",
+                    "ecr:BatchImportUpstreamImage",
+                ],
+                resources=[
+                    f"arn:aws:ecr:{stack.region}:{stack.account}:repository/{foundation.ghcr_mirror_namespace}/*"
+                ],
+            )
+        )
+
         api_key_fn = lambda_python.PythonFunction(
             self,
             "AdminApiKeyFn",
@@ -351,21 +541,21 @@ class HeadscaleStack(Stack):
             timeout=Duration.minutes(10),
             environment={
                 "CLUSTER_ARN": foundation.cluster.cluster_arn,
-                "TASK_DEFINITION_ARN": headscale_service.task_defn.task_definition_arn,
+                "TASK_DEFINITION_ARN": api_key_task_defn.task_definition_arn,
                 "SUBNET_IDS": ",".join(
                     s.subnet_id for s in foundation.vpc.private_subnets
                 ),
                 "SECURITY_GROUP_IDS": headscale_service.security_group.security_group_id,
                 "SECRET_ID": admin_api_key_secret.secret_name,
-                "CONTAINER_NAME": headscale_service.container.container_name,
-                "LOG_GROUP": headscale_service.log_group.log_group_name,
+                "CONTAINER_NAME": api_key_container.container_name,
+                "LOG_GROUP": api_key_log_group.log_group_name,
                 "LOG_STREAM_PREFIX": "headscale",
             },
         )
         api_key_fn.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["ecs:RunTask"],
-                resources=[headscale_service.task_defn.task_definition_arn],
+                resources=[api_key_task_defn.task_definition_arn],
             )
         )
         api_key_fn.add_to_role_policy(
@@ -378,8 +568,8 @@ class HeadscaleStack(Stack):
             iam.PolicyStatement(
                 actions=["iam:PassRole"],
                 resources=[
-                    headscale_service.task_defn.task_role.role_arn,
-                    headscale_service.task_defn.obtain_execution_role().role_arn,
+                    api_key_task_defn.task_role.role_arn,
+                    api_key_task_defn.obtain_execution_role().role_arn,
                 ],
             )
         )

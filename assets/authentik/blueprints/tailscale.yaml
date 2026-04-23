@@ -17,6 +17,7 @@ entries:
         - matching_mode: strict
           url: !Env AK_BP_TAILSCALE_REDIRECT_URI
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       property_mappings:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]

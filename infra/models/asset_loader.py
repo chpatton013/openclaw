@@ -12,6 +12,12 @@ class AssetLoader:
             raise FileNotFoundError(f"lambda asset not found: {path}")
         return path
 
+    def docker_path(self, name: str) -> pathlib.Path:
+        path = self._assets / name
+        if not (path / "Dockerfile").is_file():
+            raise FileNotFoundError(f"docker asset not found: {path}/Dockerfile")
+        return path
+
     def blueprints_path(self, name: str) -> pathlib.Path:
         path = self._assets / name / "blueprints"
         if not path.is_dir():

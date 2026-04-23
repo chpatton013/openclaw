@@ -39,22 +39,6 @@ def _run_task() -> str:
                 "assignPublicIp": "DISABLED",
             }
         },
-        overrides={
-            "containerOverrides": [
-                {
-                    "name": CONTAINER_NAME,
-                    "command": [
-                        "headscale",
-                        "apikeys",
-                        "create",
-                        "--expiration",
-                        "0",
-                        "--output",
-                        "json",
-                    ],
-                }
-            ]
-        },
     )
     tasks = response.get("tasks") or []
     failures = response.get("failures") or []
@@ -112,19 +96,24 @@ def handler(event, _ctx):
         (c.get("exitCode") for c in containers if c.get("name") == CONTAINER_NAME), None
     )
     if exit_code != 0:
-        raise RuntimeError(f"headscale task exited with code {exit_code}: {task}")
+        raise RuntimeError(f"headscale task exited with code {exit_code}: {task_arn}")
 
     output = _fetch_log_output(task_arn, log_stream_prefix, log_group)
     api_key = None
     for line in output.splitlines():
         line = line.strip()
-        if not line.startswith("{"):
+        if not line.startswith(('"', "{")):
             continue
         try:
             doc = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if "api_key" in doc:
+        # headscale 0.26+ outputs the key as a bare JSON string;
+        # older versions output {"api_key": "..."}.
+        if isinstance(doc, str):
+            api_key = doc
+            break
+        if isinstance(doc, dict) and "api_key" in doc:
             api_key = doc["api_key"]
             break
     if not api_key:
