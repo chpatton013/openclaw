@@ -105,7 +105,9 @@ class VaultwardenStack(Stack):
             "LOG_LEVEL": "info",
         }
         secrets = {
-            "ADMIN_TOKEN": ecs.Secret.from_secrets_manager(admin_token_secret),
+            "ADMIN_TOKEN": ecs.Secret.from_secrets_manager(
+                admin_token_secret, "secret"
+            ),
             "SMTP_USERNAME": ecs.Secret.from_secrets_manager(smtp_secret, "username"),
             "SMTP_PASSWORD": ecs.Secret.from_secrets_manager(smtp_secret, "password"),
             "DB_USER": ecs.Secret.from_secrets_manager(db_secret, "username"),

@@ -158,7 +158,9 @@ class AuthentikStack(Stack):
             "AUTHENTIK_POSTGRESQL__USER": ecs.Secret.from_secrets_manager(
                 db_secret, "username"
             ),
-            "AUTHENTIK_SECRET_KEY": ecs.Secret.from_secrets_manager(secret_key),
+            "AUTHENTIK_SECRET_KEY": ecs.Secret.from_secrets_manager(
+                secret_key, "secret"
+            ),
             "AK_BP_TAILSCALE_CLIENT_ID": ecs.Secret.from_secrets_manager(
                 tailscale_oidc_secret, "client_id"
             ),

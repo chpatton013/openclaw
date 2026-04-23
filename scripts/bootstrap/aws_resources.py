@@ -300,6 +300,8 @@ def main() -> int:
     if needs_write("authentik/secret-key", existing):
         write_secret(
             "authentik/secret-key",
+            template={},
+            key="secret",
             provided=resolve_optional_password(
                 args, "authentik_secret_key", "Authentik secret key"
             ),
@@ -377,18 +379,24 @@ def main() -> int:
             )
 
     if needs_write("headplane/cookie-secret", existing):
-        write_secret("headplane/cookie-secret", bytes_=32)
+        write_secret("headplane/cookie-secret", template={}, key="secret", bytes_=32)
     if needs_write("headscale/noise-private-key", existing):
-        write_secret("headscale/noise-private-key", bytes_=32)
+        write_secret(
+            "headscale/noise-private-key", template={}, key="secret", bytes_=32
+        )
     # Placeholder - the HeadscaleStack custom resource replaces this with the
     # real API key after Headscale is up. Secrets Manager rejects empty
     # strings, so we write a sentinel that the lambda recognizes.
     if needs_write("headscale/admin-api-key", existing):
-        write_secret("headscale/admin-api-key", provided="pending")
+        write_secret(
+            "headscale/admin-api-key", template={}, key="secret", provided="pending"
+        )
 
     if needs_write("vaultwarden/admin-token", existing):
         write_secret(
             "vaultwarden/admin-token",
+            template={},
+            key="secret",
             provided=resolve_optional_password(
                 args, "vaultwarden_admin_token", "Vaultwarden admin token"
             ),

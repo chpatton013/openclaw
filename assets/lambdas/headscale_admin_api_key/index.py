@@ -21,8 +21,12 @@ PLACEHOLDER = "pending"
 
 def _current_secret() -> str:
     try:
-        value = sm.get_secret_value(SecretId=SECRET_ID).get("SecretString", "")
+        raw = sm.get_secret_value(SecretId=SECRET_ID).get("SecretString", "")
     except sm.exceptions.ResourceNotFoundException:
+        return ""
+    try:
+        value = json.loads(raw).get("secret", "")
+    except (json.JSONDecodeError, AttributeError):
         return ""
     return "" if value == PLACEHOLDER else value
 
@@ -119,5 +123,7 @@ def handler(event, _ctx):
     if not api_key:
         raise RuntimeError(f"could not extract api_key from task output: {output!r}")
 
-    sm.put_secret_value(SecretId=SECRET_ID, SecretString=api_key)
+    sm.put_secret_value(
+        SecretId=SECRET_ID, SecretString=json.dumps({"secret": api_key})
+    )
     return {"PhysicalResourceId": "headscale-admin-api-key"}

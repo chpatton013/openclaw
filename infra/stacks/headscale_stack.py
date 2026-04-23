@@ -84,24 +84,14 @@ class HeadscaleStack(Stack):
         headscale_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "HeadscaleOidcSecret", "authentik/oidc/headscale"
         )
-        # Use from_secret_complete_arn for secrets referenced without a JSON key.
-        # Without a JSON key, ECS puts the partial ARN in valueFrom, so Secrets Manager
-        # uses the partial ARN for the IAM check - and CDK's random-suffix grant doesn't match.
-        # The full ARN (with the random suffix) ensures the IAM check works correctly.
-        admin_api_key_secret = secretsmanager.Secret.from_secret_complete_arn(
-            self,
-            "AdminApiKeySecret",
-            "arn:aws:secretsmanager:us-west-2:848195118240:secret:headscale/admin-api-key-NL0uaY",
+        admin_api_key_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "AdminApiKeySecret", "headscale/admin-api-key"
         )
-        headplane_oidc_secret = secretsmanager.Secret.from_secret_complete_arn(
-            self,
-            "HeadplaneOidcSecret",
-            "arn:aws:secretsmanager:us-west-2:848195118240:secret:authentik/oidc/headplane-NOuNGH",
+        headplane_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "HeadplaneOidcSecret", "authentik/oidc/headplane"
         )
-        headplane_cookie_secret = secretsmanager.Secret.from_secret_complete_arn(
-            self,
-            "HeadplaneCookieSecret",
-            "arn:aws:secretsmanager:us-west-2:848195118240:secret:headplane/cookie-secret-reeOyo",
+        headplane_cookie_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "HeadplaneCookieSecret", "headplane/cookie-secret"
         )
         db_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "DbSecret", cfg.db.secret_name
@@ -202,7 +192,8 @@ class HeadscaleStack(Stack):
                 f'chmod 600 "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
                 " | ".join(
                     [
-                        f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_ARN}}" --query SecretString --output text',
+                        f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_NAME}}" --query SecretString --output text',
+                        "jq -r .secret",
                         "base64 -d",
                         "od -An -v -t x1",
                         'tr -d "[:space:]"',
@@ -211,7 +202,7 @@ class HeadscaleStack(Stack):
                 ),
                 f'printf "noise:\\n  private_key_path: {NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}\\n" >"{NOISE_MOUNT_PATH}/{CONFIG_FILENAME}"',
             ],
-            environment={"NOISE_SECRET_ARN": noise_secret.secret_arn},
+            environment={"NOISE_SECRET_NAME": "headscale/noise-private-key"},
             stream_prefix="headscale-noise-init",
             main_container_read_only=False,
         )
@@ -262,9 +253,10 @@ class HeadscaleStack(Stack):
             f".{SERVICE_DISCOVERY_NAMESPACE}:{HEADSCALE_HTTP_PORT}"
         )
         # Fetch steps use ${{VAR}} (CDK escaping for literal ${VAR} in shell).
-        _fetch_cookie = f'COOKIE=$(aws secretsmanager get-secret-value --secret-id "${{HP_COOKIE_ARN}}" --query SecretString --output text | cut -c1-32)'
-        _fetch_apikey = f'APIKEY=$(aws secretsmanager get-secret-value --secret-id "${{HP_APIKEY_ARN}}" --query SecretString --output text)'
-        _fetch_oidc = f'OIDC=$(aws secretsmanager get-secret-value --secret-id "${{HP_OIDC_ARN}}" --query SecretString --output text)'
+        # Secrets are JSON {"secret": "..."} so .secret is extracted via jq.
+        _fetch_cookie = f'COOKIE=$(aws secretsmanager get-secret-value --secret-id "${{HP_COOKIE_NAME}}" --query SecretString --output text | jq -r .secret | cut -c1-32)'
+        _fetch_apikey = f'APIKEY=$(aws secretsmanager get-secret-value --secret-id "${{HP_APIKEY_NAME}}" --query SecretString --output text | jq -r .secret)'
+        _fetch_oidc = f'OIDC=$(aws secretsmanager get-secret-value --secret-id "${{HP_OIDC_NAME}}" --query SecretString --output text)'
         _parse_oidc = 'CLIENT_ID=$(echo "$OIDC" | jq -r .client_id)'
         _parse_secret = 'CLIENT_SECRET=$(echo "$OIDC" | jq -r .client_secret)'
         _export = "export COOKIE APIKEY CLIENT_ID CLIENT_SECRET"
@@ -308,26 +300,21 @@ class HeadscaleStack(Stack):
                 _pyeof,
             ],
             environment={
-                "HP_COOKIE_ARN": headplane_cookie_secret.secret_arn,
-                "HP_APIKEY_ARN": admin_api_key_secret.secret_arn,
-                "HP_OIDC_ARN": headplane_oidc_secret.secret_arn,
+                "HP_COOKIE_NAME": "headplane/cookie-secret",
+                "HP_APIKEY_NAME": "headscale/admin-api-key",
+                "HP_OIDC_NAME": "authentik/oidc/headplane",
                 "HP_HEADSCALE_URL": _headscale_url,
                 "HP_OIDC_ISSUER": headplane_oidc_issuer,
                 "HP_REDIRECT_URI": f"https://{headplane_fqdn}/oidc/callback",
             },
             stream_prefix="headplane-config-init",
         )
-        # Grant the task role (used by init container) access to headplane secrets.
-        headplane_service.task_defn.task_role.add_to_principal_policy(
-            iam.PolicyStatement(
-                actions=["secretsmanager:GetSecretValue"],
-                resources=[
-                    headplane_cookie_secret.secret_arn,
-                    headplane_oidc_secret.secret_arn,
-                    admin_api_key_secret.secret_arn,
-                ],
-            )
-        )
+        # Grant the task role (used by init container shell scripts) read access.
+        # Using grant_read() generates name-?????? ARN patterns that match the
+        # full ARN resolved when secrets are fetched by name.
+        headplane_cookie_secret.grant_read(headplane_service.task_defn.task_role)
+        headplane_oidc_secret.grant_read(headplane_service.task_defn.task_role)
+        admin_api_key_secret.grant_read(headplane_service.task_defn.task_role)
 
         ###
         # ALB and routing
@@ -469,7 +456,8 @@ class HeadscaleStack(Stack):
             f'chmod 600 "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
             " | ".join(
                 [
-                    f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_ARN}}" --query SecretString --output text',
+                    f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_NAME}}" --query SecretString --output text',
+                    "jq -r .secret",
                     "base64 -d",
                     "od -An -v -t x1",
                     'tr -d "[:space:]"',
@@ -486,7 +474,7 @@ class HeadscaleStack(Stack):
             essential=False,
             entry_point=["sh", "-c"],
             command=["; ".join(["set -eu", *_noise_init_cmds])],
-            environment={"NOISE_SECRET_ARN": noise_secret.secret_arn},
+            environment={"NOISE_SECRET_NAME": "headscale/noise-private-key"},
             logging=ecs.LogDrivers.aws_logs(
                 stream_prefix="headscale-noise-init",
                 log_group=api_key_log_group,

@@ -125,7 +125,7 @@ script for each step, or take matters into your own hands.
     - Helper script
         - `bin/aws-write-secret ecr-pullthroughcache/ghcr --template='{"username":"GITHUB_USERNAME"}' --key=accessToken  # GitHub PAT with read:packages scope`
         - `bin/aws-write-secret ecr-pullthroughcache/dockerhub --template='{"username":"DOCKERHUB_USERNAME"}' --key=accessToken  # Docker Hub PAT`
-        - `bin/aws-write-secret authentik/secret-key --length=50 --exclude-punctuation`
+        - `bin/aws-write-secret authentik/secret-key --template='{}' --key=secret --length=50 --exclude-punctuation`
         - `bin/aws-write-secret authentik/bootstrap --template='{"email":"EMAIL"}' --key=password`
         - `bin/aws-write-secret data/database --template='{"username":"USERNAME"}' --key=password`
           (RDS master; read by the `DataStack` init Lambda only — no service uses it)
@@ -139,12 +139,49 @@ script for each step, or take matters into your own hands.
           seeds both into Authentik on first apply)
         - `bin/aws-write-secret authentik/oidc/headplane -`
           (same shape as headscale)
-        - `bin/aws-write-secret headscale/noise-private-key --bytes=32`
-        - `bin/aws-write-secret headplane/cookie-secret --bytes=32`
-        - `echo -n pending | bin/aws-write-secret headscale/admin-api-key -  # sentinel placeholder; replaced by HeadscaleStack`
+        - `bin/aws-write-secret headscale/noise-private-key --template='{}' --key=secret --bytes=32`
+        - `bin/aws-write-secret headplane/cookie-secret --template='{}' --key=secret --bytes=32`
+        - `echo -n pending | bin/aws-write-secret headscale/admin-api-key --template='{}' --key=secret -  # sentinel placeholder; replaced by HeadscaleStack`
         - `bin/aws-write-secret vaultwarden/database --template='{"username":"vaultwarden"}' --key=password --length=32 --exclude-punctuation`
-        - `bin/aws-write-secret vaultwarden/admin-token --length=64 --exclude-punctuation`
+        - `bin/aws-write-secret vaultwarden/admin-token --template='{}' --key=secret --length=64 --exclude-punctuation`
         - `bin/aws-write-secret vaultwarden/smtp --template='{"username":"USERNAME"}' --key=password`
+
+## Secrets Format Convention
+
+All single-value secrets (passwords, tokens, keys) are stored as JSON objects
+with a `"secret"` key rather than as bare strings:
+
+```json
+{"secret": "the-actual-value"}
+```
+
+Multi-value secrets (credentials with username + password, OIDC clients, etc.)
+continue to use their natural field names (`"username"`, `"password"`,
+`"client_id"`, `"client_secret"`, etc.).
+
+### Why JSON for single values?
+
+AWS Secrets Manager assigns every secret a random 6-character suffix in its
+ARN (e.g., `my-secret-AbCdEf`). CDK's ECS secret grant uses the wildcard
+pattern `my-secret-??????` to match it.
+
+When ECS resolves a container secret, it calls `GetSecretValue` with either:
+
+- **A JSON field ref** (`name:field::`): Secrets Manager resolves the name to
+  the full ARN first, then the IAM check is against the full ARN —
+  `my-secret-??????` matches `my-secret-AbCdEf`. ✓
+- **A bare name or partial ARN**: the IAM check is against the partial ARN
+  (`my-secret`) — `my-secret-??????` requires 6 extra characters and does not
+  match `my-secret` (zero extra characters). ✗
+
+Wrapping every single-value secret in `{"secret": "..."}` and referencing it
+with `ecs.Secret.from_secrets_manager(secret, "secret")` ensures the first
+(working) resolution path is always used, without needing to hard-code the
+random ARN suffix anywhere in the codebase.
+
+The same applies to init-container shell scripts: passing the **secret name**
+(not partial ARN) to `--secret-id` triggers name→full-ARN resolution before the
+IAM check, so CDK's grants work correctly there too.
 
 ## Development
 
