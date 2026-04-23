@@ -240,19 +240,14 @@ class HeadscaleStack(Stack):
                         host_port=HEADPLANE_HTTP_PORT,
                     ),
                 ],
-                # Use the built-in /admin/healthz route (200=OK, 500=ERROR) via
-                # the /nodejs/bin/node binary present in the production image.
+                # /admin/healthz returns 200 OK or 500 ERROR. The production
+                # image is distroless so curl is absent; use the bundled node.
                 health_check=ecs.HealthCheck(
                     command=[
                         "CMD",
                         "/nodejs/bin/node",
                         "-e",
-                        (
-                            "require('http').get("
-                            f"'http://localhost:{HEADPLANE_HTTP_PORT}/admin/healthz',"
-                            "r=>process.exit(r.statusCode===200?0:1)"
-                            ").on('error',()=>process.exit(1))"
-                        ),
+                        f"fetch('http://localhost:{HEADPLANE_HTTP_PORT}/admin/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
                     ],
                     interval=Duration.seconds(30),
                     timeout=Duration.seconds(10),
