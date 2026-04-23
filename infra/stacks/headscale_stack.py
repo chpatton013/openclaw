@@ -420,23 +420,8 @@ class HeadscaleStack(Stack):
         )
         api_key_task_defn.add_volume(name=NOISE_VOLUME)
         api_key_log_group = logs.LogGroup(self, "ApiKeyLogGroup")
-        _config = f"{NOISE_MOUNT_PATH}/{CONFIG_FILENAME}"
-        _script = (
-            f"headscale serve --config {_config} &"
-            f" SERVER_PID=$!;"
-            f" for i in $(seq 1 30); do"
-            f"   headscale apikeys list --config {_config} >/dev/null 2>&1"
-            f"   && break; sleep 2; done;"
-            f" headscale apikeys create --config {_config}"
-            f" --expiration 0 --output json;"
-            f" STATUS=$?;"
-            f" kill $SERVER_PID 2>/dev/null;"
-            f" wait $SERVER_PID 2>/dev/null;"
-            f" exit $STATUS"
-        )
-        # Custom image: headscale binary on Alpine (which has /bin/sh).
-        # The production headscale image is distroless (no shell) so we build
-        # a thin wrapper that copies the static headscale binary into Alpine.
+        # Custom image bundles the headscale binary on Alpine (distroless
+        # production image has no shell) with the create-api-key entrypoint.
         api_key_image = ecs.ContainerImage.from_docker_image_asset(
             ecr_assets.DockerImageAsset(
                 self,
@@ -448,8 +433,6 @@ class HeadscaleStack(Stack):
         api_key_container = api_key_task_defn.add_container(
             "Container",
             image=api_key_image,
-            entry_point=["sh", "-c"],
-            command=[_script],
             environment=headscale_env,
             secrets=headscale_secrets,
             logging=ecs.LogDrivers.aws_logs(

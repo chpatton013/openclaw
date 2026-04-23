@@ -4,4 +4,6 @@ FROM ghcr.io/juanfont/headscale:0.26.1 AS headscale
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 COPY --from=headscale /ko-app/headscale /usr/local/bin/headscale
-ENTRYPOINT ["sh", "-c"]
+COPY create-api-key.sh /usr/local/bin/create-api-key
+RUN chmod +x /usr/local/bin/create-api-key
+ENTRYPOINT ["/usr/local/bin/create-api-key"]
