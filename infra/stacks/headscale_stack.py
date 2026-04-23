@@ -240,6 +240,25 @@ class HeadscaleStack(Stack):
                         host_port=HEADPLANE_HTTP_PORT,
                     ),
                 ],
+                # Use the built-in /admin/healthz route (200=OK, 500=ERROR) via
+                # the /nodejs/bin/node binary present in the production image.
+                health_check=ecs.HealthCheck(
+                    command=[
+                        "CMD",
+                        "/nodejs/bin/node",
+                        "-e",
+                        (
+                            "require('http').get("
+                            f"'http://localhost:{HEADPLANE_HTTP_PORT}/admin/healthz',"
+                            "r=>process.exit(r.statusCode===200?0:1)"
+                            ").on('error',()=>process.exit(1))"
+                        ),
+                    ],
+                    interval=Duration.seconds(30),
+                    timeout=Duration.seconds(10),
+                    retries=3,
+                    start_period=Duration.seconds(30),
+                ),
             ),
         )
 
@@ -351,8 +370,8 @@ class HeadscaleStack(Stack):
             targets=[headplane_service.service],
             deregistration_delay=Duration.seconds(30),
             health_check=elbv2.HealthCheck(
-                path="/admin",
-                healthy_http_codes="200,302,401,403",
+                path="/admin/healthz",
+                healthy_http_codes="200",
             ),
         )
         alb.https_listener.add_action(
