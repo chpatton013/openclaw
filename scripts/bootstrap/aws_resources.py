@@ -379,7 +379,13 @@ def main() -> int:
             )
 
     if needs_write("headplane/cookie-secret", existing):
-        write_secret("headplane/cookie-secret", template={}, key="secret", bytes_=32)
+        write_secret(
+            "headplane/cookie-secret",
+            template={},
+            key="secret",
+            length=32,
+            exclude_punctuation=True,
+        )
     if needs_write("headscale/noise-private-key", existing):
         write_secret(
             "headscale/noise-private-key", template={}, key="secret", bytes_=32
