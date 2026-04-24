@@ -53,7 +53,7 @@ def build_app(
             assets=assets,
             tailscale_redirect_uri="https://login.tailscale.com/a/oauth_response",
             headscale_redirect_uri=f"https://{headscale_fqdn}/oidc/callback",
-            headplane_redirect_uri=f"https://{headplane_fqdn}/oidc/callback",
+            headplane_redirect_uri=f"https://{headplane_fqdn}/admin/oidc/callback",
         ),
         env=env,
     )

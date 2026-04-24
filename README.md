@@ -88,6 +88,15 @@ remaining manual step is the Tailscale SaaS-side registration.
         - Sign up with OIDC
     - Authentik redirecting to Tailscale
         - Continue
+- Headplane
+    - Log in at `https://headplane.<public_domain>/admin` using the Headscale
+      admin API key, which is written to Secrets Manager during the
+      HeadscaleStack deploy:
+      ```sh
+      aws secretsmanager get-secret-value \
+          --secret-id headscale/admin-api-key \
+          --query SecretString --output text | jq -r .secret
+      ```
 - Domain registrars
     - After the hosted zone are created, copy the 4 NS records from Route53 into
     the registrar DNS config.

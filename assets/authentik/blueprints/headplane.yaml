@@ -33,6 +33,7 @@ entries:
       name: Headplane
       provider: !KeyOf headplane-provider
       policy_engine_mode: any
+      meta_launch_url: !Env AK_BP_HEADPLANE_LAUNCH_URL
   - model: authentik_policies.policybinding
     identifiers:
       target: !Find [authentik_core.application, [slug, headplane]]

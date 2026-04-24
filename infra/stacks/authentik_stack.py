@@ -145,7 +145,10 @@ class AuthentikStack(Stack):
             "AK_BP_TAILSCALE_REDIRECT_URI": imports.tailscale_redirect_uri,
             "AK_BP_HEADSCALE_REDIRECT_URI": imports.headscale_redirect_uri,
             "AK_BP_HEADPLANE_REDIRECT_URI": imports.headplane_redirect_uri,
-            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "3",
+            "AK_BP_HEADPLANE_LAUNCH_URL": imports.headplane_redirect_uri.rpartition(
+                "/oidc/callback"
+            )[0],
+            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "4",
         }
 
         common_secrets = {

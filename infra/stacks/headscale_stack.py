@@ -319,7 +319,7 @@ class HeadscaleStack(Stack):
                 "HP_OIDC_NAME": "authentik/oidc/headplane",
                 "HP_HEADSCALE_URL": _headscale_url,
                 "HP_OIDC_ISSUER": headplane_oidc_issuer,
-                "HP_REDIRECT_URI": f"https://{headplane_fqdn}/oidc/callback",
+                "HP_REDIRECT_URI": f"https://{headplane_fqdn}/admin/oidc/callback",
             },
             stream_prefix="headplane-config-init",
         )

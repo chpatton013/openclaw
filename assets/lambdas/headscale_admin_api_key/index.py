@@ -115,10 +115,10 @@ def handler(event, _ctx):
         # headscale 0.26+ outputs the key as a bare JSON string;
         # older versions output {"api_key": "..."}.
         if isinstance(doc, str):
-            api_key = doc
+            api_key = doc.strip()
             break
         if isinstance(doc, dict) and "api_key" in doc:
-            api_key = doc["api_key"]
+            api_key = doc["api_key"].strip()
             break
     if not api_key:
         raise RuntimeError(f"could not extract api_key from task output: {output!r}")
