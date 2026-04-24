@@ -2,6 +2,13 @@
 public_domain = "chiiiirs.com"
 private_domain = "chiiiirs.net"
 
+[data]
+master_secret_name = "data/database"
+
+[data.instance]
+instance_type = "t4g.small"
+allocated_storage_gib = 20
+
 [webfinger]
 subject = "acct:chris@chiiiirs.com"
 oidc_issuer_application = "tailscale"
@@ -9,13 +16,6 @@ oidc_issuer_application = "tailscale"
 [authentik]
 subdomain = "auth"
 image_version = "2026.2"
-
-[data]
-master_secret_name = "data/database"
-
-[data.instance]
-instance_type = "t4g.small"
-allocated_storage_gib = 20
 
 [authentik.db]
 name = "authentik"
@@ -36,6 +36,10 @@ min_healthy_percent = 100
 [authentik.smtp]
 host = "smtp.chiiiirs.com"
 from_email_address = "authentik@chiiiirs.com"
+
+[authentik.user]
+username = "chris"
+display_name = "Chris"
 
 [headscale]
 headscale_subdomain = "headscale"

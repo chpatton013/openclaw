@@ -70,22 +70,12 @@ running with any concurrency.
 
 ## Post-Deploy Setup
 
-The Tailscale, Headscale, and Headplane OIDC applications are provisioned
-automatically by Authentik blueprints in
+The Tailscale, Headscale, and Headplane OIDC applications, users, and group
+memberships are provisioned automatically by Authentik blueprints in
 [`assets/authentik/blueprints/`](./assets/authentik/blueprints/), synced to
 each Authentik task from S3 by an init container on every deploy. The only
-remaining manual steps are user/group membership and the Tailscale SaaS-side
-registration.
+remaining manual step is the Tailscale SaaS-side registration.
 
-- Authentik
-    - Directory > Users > New Service Account
-        - Set name to `tailscale`
-        - Enable "Create Group" and "Expiring"
-        - Create Service Account
-        - Copy the password for later
-    - Directory > Groups > `tailscale` > Users > Add existing user
-        - Select `akadmin` and the `tailscale` service account
-        - Confirm and Assign
 - Tailscale (SaaS-side)
     - Create a new account with OIDC provider
         - Email address: tailscale@example.com
@@ -298,10 +288,11 @@ DAG. But they can never declare a cyclical dependency.
     - TODO:
         - Wire up Authentik SSO (add `vaultwarden.yaml` blueprint,
           `authentik/oidc/vaultwarden` secret, `SSO_ENABLED` env)
-- Planned AWS stacks:
-    - searXNG
+- Planned public AWS stacks:
     - Matrix Synapse
     - mail
+- Planned private AWS stacks:
+    - searXNG
 - Planned homelab hosting:
     - ownCloud / NextCloud
     - Gitea or Forgejo

@@ -1,0 +1,12 @@
+version: 1
+metadata:
+  name: Create Primary User
+entries:
+  - model: authentik_core.user
+    identifiers:
+      username: !Env AK_BP_USER_USERNAME
+    attrs:
+      name: !Env AK_BP_USER_DISPLAY_NAME
+      email: !Env AK_BP_USER_EMAIL
+      type: internal
+      is_active: true

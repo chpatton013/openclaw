@@ -7,6 +7,19 @@ from .smtp_config import SmtpConfig
 
 
 @dataclass(frozen=True)
+class AuthentikUserConfig:
+    username: str
+    display_name: str
+
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> Self:
+        return cls(
+            username=data["username"],
+            display_name=data["display_name"],
+        )
+
+
+@dataclass(frozen=True)
 class AuthentikConfig:
     subdomain: str
     image_version: str
@@ -14,6 +27,7 @@ class AuthentikConfig:
     server: FargateTaskConfig
     worker: FargateTaskConfig
     smtp: SmtpConfig
+    user: AuthentikUserConfig
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
@@ -24,4 +38,5 @@ class AuthentikConfig:
             server=FargateTaskConfig.load(data["server"]),
             worker=FargateTaskConfig.load(data["worker"]),
             smtp=SmtpConfig.load(data["smtp"]),
+            user=AuthentikUserConfig.load(data["user"]),
         )

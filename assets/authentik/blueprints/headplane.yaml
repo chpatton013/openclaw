@@ -2,6 +2,12 @@ version: 1
 metadata:
   name: Headplane OIDC application
 entries:
+  - model: authentik_core.group
+    identifiers:
+      name: headplane
+    attrs:
+      users:
+        - !Find [authentik_core.user, [username, !Env AK_BP_USER_USERNAME]]
   - model: authentik_providers_oauth2.oauth2provider
     id: headplane-provider
     identifiers:
@@ -27,3 +33,9 @@ entries:
       name: Headplane
       provider: !KeyOf headplane-provider
       policy_engine_mode: any
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !Find [authentik_core.application, [slug, headplane]]
+      group: !Find [authentik_core.group, [name, headplane]]
+    attrs:
+      order: 0

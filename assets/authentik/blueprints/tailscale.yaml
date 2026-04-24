@@ -5,6 +5,9 @@ entries:
   - model: authentik_core.group
     identifiers:
       name: tailscale
+    attrs:
+      users:
+        - !Find [authentik_core.user, [username, !Env AK_BP_USER_USERNAME]]
   - model: authentik_providers_oauth2.oauth2provider
     id: tailscale-provider
     identifiers:
