@@ -148,7 +148,7 @@ class AuthentikStack(Stack):
             "AK_BP_HEADPLANE_LAUNCH_URL": imports.headplane_redirect_uri.rpartition(
                 "/oidc/callback"
             )[0],
-            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "4",
+            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "5",
         }
 
         common_secrets = {
