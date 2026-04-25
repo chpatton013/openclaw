@@ -33,6 +33,7 @@ class AuthentikImports:
     tailscale_redirect_uri: str
     headscale_redirect_uri: str
     headplane_redirect_uri: str
+    headplane_launch_url: str
 
 
 AUTHENTIK_HTTP_PORT = 9000
@@ -145,10 +146,8 @@ class AuthentikStack(Stack):
             "AK_BP_TAILSCALE_REDIRECT_URI": imports.tailscale_redirect_uri,
             "AK_BP_HEADSCALE_REDIRECT_URI": imports.headscale_redirect_uri,
             "AK_BP_HEADPLANE_REDIRECT_URI": imports.headplane_redirect_uri,
-            "AK_BP_HEADPLANE_LAUNCH_URL": imports.headplane_redirect_uri.rpartition(
-                "/oidc/callback"
-            )[0],
-            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "5",
+            "AK_BP_HEADPLANE_LAUNCH_URL": imports.headplane_launch_url,
+            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "6",
         }
 
         common_secrets = {
