@@ -68,12 +68,13 @@ class HeadscaleStack(Stack):
         authentik_issuer_base = imports.authentik_issuer_base
 
         headscale_fqdn = f"{cfg.headscale_subdomain}.{foundation.public_domain}"
-        headplane_fqdn = f"{cfg.headplane_subdomain}.{foundation.public_domain}"
         base_domain = f"{cfg.dns_subdomain}.{foundation.private_domain}"
         headscale_oidc_issuer = (
             f"{authentik_issuer_base}/{cfg.oidc_issuer_application}/"
         )
-        headplane_oidc_issuer = f"{authentik_issuer_base}/{cfg.headplane_subdomain}/"
+        # Headplane is served at headscale_fqdn/admin; "headplane" is the
+        # Authentik application slug (matches the blueprint), not a subdomain.
+        headplane_oidc_issuer = f"{authentik_issuer_base}/headplane/"
 
         ###
         # Secrets
@@ -319,7 +320,7 @@ class HeadscaleStack(Stack):
                 "HP_OIDC_NAME": "authentik/oidc/headplane",
                 "HP_HEADSCALE_URL": _headscale_url,
                 "HP_OIDC_ISSUER": headplane_oidc_issuer,
-                "HP_REDIRECT_URI": f"https://{headplane_fqdn}/admin/oidc/callback",
+                "HP_REDIRECT_URI": f"https://{headscale_fqdn}/admin/oidc/callback",
             },
             stream_prefix="headplane-config-init",
         )
@@ -340,12 +341,29 @@ class HeadscaleStack(Stack):
             a_record=cfg.headscale_subdomain,
             zone=foundation.public_zone,
             vpc=foundation.vpc,
-            additional_fqdns=[headplane_fqdn],
         )
 
+        # Headplane is served at /admin on the headscale subdomain.
+        # Route /admin and /admin/* to headplane before the headscale catch-all.
+        alb.https_listener.add_targets(
+            "HeadplaneTargets",
+            priority=5,
+            conditions=[
+                elbv2.ListenerCondition.host_headers([headscale_fqdn]),
+                elbv2.ListenerCondition.path_patterns(["/admin", "/admin/*"]),
+            ],
+            port=HEADPLANE_HTTP_PORT,
+            protocol=elbv2.ApplicationProtocol.HTTP,
+            targets=[headplane_service.service],
+            deregistration_delay=Duration.seconds(30),
+            health_check=elbv2.HealthCheck(
+                path="/admin/healthz",
+                healthy_http_codes="200",
+            ),
+        )
         alb.https_listener.add_targets(
             "HeadscaleTargets",
-            priority=10,
+            priority=25,
             conditions=[elbv2.ListenerCondition.host_headers([headscale_fqdn])],
             port=HEADSCALE_HTTP_PORT,
             protocol=elbv2.ApplicationProtocol.HTTP,
@@ -353,19 +371,6 @@ class HeadscaleStack(Stack):
             deregistration_delay=Duration.seconds(30),
             health_check=elbv2.HealthCheck(
                 path="/health",
-                healthy_http_codes="200",
-            ),
-        )
-        alb.https_listener.add_targets(
-            "HeadplaneTargets",
-            priority=20,
-            conditions=[elbv2.ListenerCondition.host_headers([headplane_fqdn])],
-            port=HEADPLANE_HTTP_PORT,
-            protocol=elbv2.ApplicationProtocol.HTTP,
-            targets=[headplane_service.service],
-            deregistration_delay=Duration.seconds(30),
-            health_check=elbv2.HealthCheck(
-                path="/admin/healthz",
                 healthy_http_codes="200",
             ),
         )

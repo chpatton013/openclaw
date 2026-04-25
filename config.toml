@@ -43,7 +43,6 @@ display_name = "Chris"
 
 [headscale]
 headscale_subdomain = "headscale"
-headplane_subdomain = "headplane"
 dns_subdomain = "ts"
 headscale_image_version = "0.26.1"
 headplane_image_version = "0.6.1"

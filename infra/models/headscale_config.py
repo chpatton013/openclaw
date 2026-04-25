@@ -8,7 +8,6 @@ from .fargate_task_config import FargateTaskConfig
 @dataclass(frozen=True)
 class HeadscaleConfig:
     headscale_subdomain: str
-    headplane_subdomain: str
     dns_subdomain: str
     headscale_image_version: str
     headplane_image_version: str
@@ -23,7 +22,6 @@ class HeadscaleConfig:
     def load(cls, data: dict[str, Any]) -> Self:
         return cls(
             headscale_subdomain=data["headscale_subdomain"],
-            headplane_subdomain=data["headplane_subdomain"],
             dns_subdomain=data["dns_subdomain"],
             headscale_image_version=data["headscale_image_version"],
             headplane_image_version=data["headplane_image_version"],
