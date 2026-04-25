@@ -288,7 +288,6 @@ class HeadscaleStack(Stack):
                 "        'client_id': os.environ['CLIENT_ID'],",
                 "        'client_secret': os.environ['CLIENT_SECRET'],",
                 "        'token_endpoint_auth_method': 'client_secret_basic',",
-                "        'redirect_uri': os.environ['HP_REDIRECT_URI'],",
                 "        'disable_api_key_login': False,",
                 "        'headscale_api_key': os.environ['APIKEY'],",
                 "    },",
@@ -319,7 +318,6 @@ class HeadscaleStack(Stack):
                 "HP_OIDC_NAME": "authentik/oidc/headplane",
                 "HP_HEADSCALE_URL": _headscale_url,
                 "HP_OIDC_ISSUER": headplane_oidc_issuer,
-                "HP_REDIRECT_URI": f"https://{headplane_fqdn}/oidc/callback",
             },
             stream_prefix="headplane-config-init",
         )

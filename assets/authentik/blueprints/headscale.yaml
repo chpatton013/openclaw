@@ -33,6 +33,7 @@ entries:
       name: Headscale
       provider: !KeyOf headscale-provider
       policy_engine_mode: any
+      open_in_new_tab: true
   - model: authentik_policies.policybinding
     identifiers:
       target: !Find [authentik_core.application, [slug, headscale]]
