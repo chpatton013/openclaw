@@ -58,6 +58,18 @@ class PrivateEgressFargateService(Construct):
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
+            enable_execute_command=True,
+        )
+        self.task_defn.task_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ssmmessages:CreateControlChannel",
+                    "ssmmessages:CreateDataChannel",
+                    "ssmmessages:OpenControlChannel",
+                    "ssmmessages:OpenDataChannel",
+                ],
+                resources=["*"],
+            )
         )
 
     def grant_pull_through_cache(self, namespace: str) -> None:
