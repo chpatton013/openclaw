@@ -45,19 +45,27 @@ def _api(method: str, path: str, key: str, body=None):
         return json.loads(e.read())
 
 
-def _ensure_user(key: str) -> None:
-    # Create user; ignore error if it already exists.
-    _api("POST", "user", key, {"name": PREAUTHKEY_USER})
+def _ensure_user(key: str) -> str:
+    """Create user if not exists; return the numeric user ID."""
+    result = _api("POST", "user", key, {"name": PREAUTHKEY_USER})
+    if "user" in result:
+        return result["user"]["id"]
+    # User already exists - list all and find by name.
+    users = _api("GET", "user", key)
+    for u in users.get("users", []):
+        if u["name"] == PREAUTHKEY_USER:
+            return u["id"]
+    raise RuntimeError(f"Could not find or create user '{PREAUTHKEY_USER}': {result}")
 
 
-def _create_preauthkey(key: str) -> str:
+def _create_preauthkey(key: str, user_id: str) -> str:
     expiry = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 365 * 86400))
     result = _api(
         "POST",
         "preauthkey",
         key,
         {
-            "user": PREAUTHKEY_USER,
+            "user": user_id,
             "reusable": True,
             "ephemeral": False,
             "expiration": expiry,
@@ -82,8 +90,8 @@ def handler(event, _ctx):
         return {"PhysicalResourceId": "headscale-exit-node-preauthkey"}
 
     key = _get_admin_key()
-    _ensure_user(key)
-    preauthkey = _create_preauthkey(key)
+    user_id = _ensure_user(key)
+    preauthkey = _create_preauthkey(key, user_id)
 
     sm.put_secret_value(
         SecretId=PREAUTHKEY_SECRET,
