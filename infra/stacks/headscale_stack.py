@@ -568,7 +568,7 @@ class HeadscaleStack(Stack):
             self,
             "AdminApiKey",
             service_token=provider.service_token,
-            properties={"Trigger": "v1"},
+            properties={"Trigger": "v2"},
         )
         api_key_resource.node.add_dependency(headscale_service.service)
         headplane_service.node.add_dependency(api_key_resource)
