@@ -6,6 +6,21 @@ from .fargate_task_config import FargateTaskConfig
 
 
 @dataclass(frozen=True)
+class ExitNodeConfig:
+    instance_type: str
+    tailscale_image_version: str
+    hostname: str
+
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> Self:
+        return cls(
+            instance_type=data["instance_type"],
+            tailscale_image_version=data["tailscale_image_version"],
+            hostname=data["hostname"],
+        )
+
+
+@dataclass(frozen=True)
 class HeadscaleConfig:
     headscale_subdomain: str
     headplane_subdomain: str
@@ -18,6 +33,7 @@ class HeadscaleConfig:
     oidc_issuer_application: str
     dns_nameservers: list[str]
     log_level: str
+    exit_node: ExitNodeConfig
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
@@ -33,4 +49,5 @@ class HeadscaleConfig:
             oidc_issuer_application=data["oidc_issuer_application"],
             dns_nameservers=list(data["dns_nameservers"]),
             log_level=data["log_level"],
+            exit_node=ExitNodeConfig.load(data["exit_node"]),
         )

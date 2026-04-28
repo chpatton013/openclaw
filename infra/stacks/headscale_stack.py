@@ -5,6 +5,7 @@ from aws_cdk import (
     CustomResource,
     Duration,
     Stack,
+    aws_autoscaling as autoscaling,
     aws_ec2 as ec2,
     aws_ecs as ecs,
     aws_elasticloadbalancingv2 as elbv2,
@@ -572,3 +573,190 @@ class HeadscaleStack(Stack):
         )
         api_key_resource.node.add_dependency(headscale_service.service)
         headplane_service.node.add_dependency(api_key_resource)
+
+        ###
+        # Tailscale exit node (EC2-backed ECS)
+
+        exit_node_preauthkey_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "ExitNodePreauthkeySecret", "headscale/exit-node/preauthkey"
+        )
+
+        # Lambda creates the headscale user + preauthkey via the REST API.
+        exit_node_preauthkey_fn = lambda_python.PythonFunction(
+            self,
+            "ExitNodePreauthkeyFn",
+            entry=str(assets.lambda_path("headscale_exit_node_preauthkey")),
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            index="index.py",
+            handler="handler",
+            timeout=Duration.minutes(2),
+            environment={
+                "HEADSCALE_URL": f"https://{headscale_fqdn}",
+                "ADMIN_KEY_SECRET": admin_api_key_secret.secret_name,
+                "PREAUTHKEY_SECRET": exit_node_preauthkey_secret.secret_name,
+                "PREAUTHKEY_USER": "exit-node",
+            },
+        )
+        admin_api_key_secret.grant_read(exit_node_preauthkey_fn)
+        exit_node_preauthkey_secret.grant_read(exit_node_preauthkey_fn)
+        exit_node_preauthkey_secret.grant_write(exit_node_preauthkey_fn)
+
+        exit_node_preauthkey_provider = cr.Provider(
+            self,
+            "ExitNodePreauthkeyProvider",
+            on_event_handler=cast(lambda_.IFunction, exit_node_preauthkey_fn),
+        )
+        exit_node_preauthkey_resource = CustomResource(
+            self,
+            "ExitNodePreauthkey",
+            service_token=exit_node_preauthkey_provider.service_token,
+            properties={"Trigger": "v1"},
+        )
+        exit_node_preauthkey_resource.node.add_dependency(headscale_service.service)
+        exit_node_preauthkey_resource.node.add_dependency(api_key_resource)
+
+        # EC2 instance for the Tailscale exit node (Fargate can't run WireGuard).
+        exit_node_asg = autoscaling.AutoScalingGroup(
+            self,
+            "ExitNodeAsg",
+            vpc=foundation.vpc,
+            instance_type=ec2.InstanceType(cfg.exit_node.instance_type),
+            machine_image=ecs.EcsOptimizedImage.amazon_linux2(),
+            min_capacity=1,
+            max_capacity=1,
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+        )
+        exit_node_asg.role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "AmazonSSMManagedInstanceCore"
+            )
+        )
+        exit_node_asg.role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "service-role/AmazonEC2ContainerServiceforEC2Role"
+            )
+        )
+        # Enable IP forwarding on the host for exit node routing.
+        exit_node_asg.user_data.add_commands(
+            "echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/99-tailscale.conf",
+            "echo 'net.ipv6.conf.all.forwarding = 1' >> /etc/sysctl.d/99-tailscale.conf",
+            "sysctl -p /etc/sysctl.d/99-tailscale.conf",
+        )
+
+        exit_node_cluster = ecs.Cluster(self, "ExitNodeCluster", vpc=foundation.vpc)
+        exit_node_capacity_provider = ecs.AsgCapacityProvider(
+            self,
+            "ExitNodeCapacityProvider",
+            auto_scaling_group=exit_node_asg,
+            enable_managed_termination_protection=False,
+        )
+        exit_node_cluster.add_asg_capacity_provider(exit_node_capacity_provider)
+
+        exit_node_log_group = logs.LogGroup(self, "ExitNodeLogGroup")
+        exit_node_task_defn = ecs.Ec2TaskDefinition(
+            self,
+            "ExitNodeTaskDefn",
+            network_mode=ecs.NetworkMode.HOST,
+        )
+        # Grant EC2 instance role permission to pull the Tailscale image.
+        exit_node_asg.role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["ecr:GetAuthorizationToken"],
+                resources=["*"],
+            )
+        )
+        exit_node_asg.role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
+                    "ecr:CreateRepository",
+                    "ecr:BatchImportUpstreamImage",
+                ],
+                resources=[
+                    f"arn:aws:ecr:{stack.region}:{stack.account}"
+                    f":repository/{foundation.dockerhub_mirror_namespace}/*"
+                ],
+            )
+        )
+        # Grant task execution role permission to read the preauthkey.
+        exit_node_task_defn.obtain_execution_role().add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "secretsmanager:GetSecretValue",
+                    "secretsmanager:DescribeSecret",
+                ],
+                resources=[
+                    exit_node_preauthkey_secret.secret_arn,
+                    f"{exit_node_preauthkey_secret.secret_arn}-??????",
+                ],
+            )
+        )
+        exit_node_preauthkey_secret.grant_read(
+            exit_node_task_defn.obtain_execution_role()
+        )
+        exit_node_linux_params = ecs.LinuxParameters(self, "ExitNodeLinuxParams")
+        exit_node_linux_params.add_capabilities(ecs.Capability.NET_ADMIN)
+        exit_node_linux_params.add_devices(
+            ecs.Device(
+                host_path="/dev/net/tun",
+                container_path="/dev/net/tun",
+                permissions=[
+                    ecs.DevicePermission.READ,
+                    ecs.DevicePermission.WRITE,
+                    ecs.DevicePermission.MKNOD,
+                ],
+            )
+        )
+        exit_node_task_defn.add_volume(
+            name="tailscale-state",
+            host=ecs.Host(source_path="/var/lib/tailscale"),
+        )
+        exit_node_container = exit_node_task_defn.add_container(
+            "tailscale",
+            memory_limit_mib=256,
+            image=ecs.ContainerImage.from_registry(
+                f"{foundation.dockerhub_mirror_base}/tailscale/tailscale"
+                f":{cfg.exit_node.tailscale_image_version}"
+            ),
+            environment={
+                "TS_USERSPACE": "false",
+                "TS_HOSTNAME": cfg.exit_node.hostname,
+                "TS_EXTRA_ARGS": "--advertise-exit-node",
+                "TS_STATE_DIR": "/var/lib/tailscale",
+            },
+            secrets={
+                "TS_AUTHKEY": ecs.Secret.from_secrets_manager(
+                    exit_node_preauthkey_secret, "secret"
+                ),
+            },
+            linux_parameters=exit_node_linux_params,
+            essential=True,
+            logging=ecs.LogDrivers.aws_logs(
+                stream_prefix="exit-node",
+                log_group=exit_node_log_group,
+            ),
+        )
+        exit_node_container.add_mount_points(
+            ecs.MountPoint(
+                container_path="/var/lib/tailscale",
+                source_volume="tailscale-state",
+                read_only=False,
+            )
+        )
+        ecs.Ec2Service(
+            self,
+            "ExitNodeService",
+            cluster=exit_node_cluster,
+            task_definition=exit_node_task_defn,
+            desired_count=1,
+            capacity_provider_strategies=[
+                ecs.CapacityProviderStrategy(
+                    capacity_provider=exit_node_capacity_provider.capacity_provider_name,
+                    weight=1,
+                )
+            ],
+        ).node.add_dependency(exit_node_preauthkey_resource)

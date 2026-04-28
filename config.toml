@@ -67,6 +67,11 @@ memory_limit_mib = 1024
 desired_count = 1
 min_healthy_percent = 100
 
+[headscale.exit_node]
+instance_type = "t3.micro"
+tailscale_image_version = "stable"
+hostname = "aws-exit"
+
 [vaultwarden]
 subdomain = "vaultwarden"
 image_version = "1.32.7"

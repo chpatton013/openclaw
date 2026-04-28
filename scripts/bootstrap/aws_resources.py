@@ -393,6 +393,13 @@ def main() -> int:
     # Placeholder - the HeadscaleStack custom resource replaces this with the
     # real API key after Headscale is up. Secrets Manager rejects empty
     # strings, so we write a sentinel that the lambda recognizes.
+    if needs_write("headscale/exit-node/preauthkey", existing):
+        write_secret(
+            "headscale/exit-node/preauthkey",
+            template={},
+            key="secret",
+            provided="pending",
+        )
     if needs_write("headscale/admin-api-key", existing):
         write_secret(
             "headscale/admin-api-key", template={}, key="secret", provided="pending"
