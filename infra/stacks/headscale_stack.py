@@ -682,22 +682,32 @@ class HeadscaleStack(Stack):
                 ],
             )
         )
-        # Grant task execution role permission to read the preauthkey.
-        exit_node_task_defn.obtain_execution_role().add_to_principal_policy(
+        # Grant task execution role ECR and secrets access.
+        # When an execution role is defined, ECS uses it (not the instance
+        # profile) for image pulls, so GetAuthorizationToken must be here.
+        exit_node_execution_role = exit_node_task_defn.obtain_execution_role()
+        exit_node_execution_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["ecr:GetAuthorizationToken"],
+                resources=["*"],
+            )
+        )
+        exit_node_execution_role.add_to_principal_policy(
             iam.PolicyStatement(
                 actions=[
-                    "secretsmanager:GetSecretValue",
-                    "secretsmanager:DescribeSecret",
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
+                    "ecr:CreateRepository",
+                    "ecr:BatchImportUpstreamImage",
                 ],
                 resources=[
-                    exit_node_preauthkey_secret.secret_arn,
-                    f"{exit_node_preauthkey_secret.secret_arn}-??????",
+                    f"arn:aws:ecr:{stack.region}:{stack.account}"
+                    f":repository/{foundation.dockerhub_mirror_namespace}/*"
                 ],
             )
         )
-        exit_node_preauthkey_secret.grant_read(
-            exit_node_task_defn.obtain_execution_role()
-        )
+        exit_node_preauthkey_secret.grant_read(exit_node_execution_role)
         exit_node_linux_params = ecs.LinuxParameters(self, "ExitNodeLinuxParams")
         exit_node_linux_params.add_capabilities(ecs.Capability.NET_ADMIN)
         exit_node_linux_params.add_devices(
