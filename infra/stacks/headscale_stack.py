@@ -763,7 +763,7 @@ class HeadscaleStack(Stack):
                 read_only=False,
             )
         )
-        ecs.Ec2Service(
+        exit_node_service = ecs.Ec2Service(
             self,
             "ExitNodeService",
             cluster=exit_node_cluster,
@@ -775,4 +775,35 @@ class HeadscaleStack(Stack):
                     weight=1,
                 )
             ],
-        ).node.add_dependency(exit_node_preauthkey_resource)
+        )
+        exit_node_service.node.add_dependency(exit_node_preauthkey_resource)
+
+        # Approve advertised exit-node routes once the machine registers.
+        exit_node_routes_fn = lambda_python.PythonFunction(
+            self,
+            "ExitNodeRoutesFn",
+            entry=str(assets.lambda_path("headscale_exit_node_routes")),
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            index="index.py",
+            handler="handler",
+            timeout=Duration.minutes(10),
+            environment={
+                "HEADSCALE_URL": f"https://{headscale_fqdn}",
+                "ADMIN_KEY_SECRET": admin_api_key_secret.secret_name,
+                "NODE_HOSTNAME": cfg.exit_node.hostname,
+            },
+        )
+        admin_api_key_secret.grant_read(exit_node_routes_fn)
+
+        exit_node_routes_provider = cr.Provider(
+            self,
+            "ExitNodeRoutesProvider",
+            on_event_handler=cast(lambda_.IFunction, exit_node_routes_fn),
+        )
+        exit_node_routes_resource = CustomResource(
+            self,
+            "ExitNodeRoutes",
+            service_token=exit_node_routes_provider.service_token,
+            properties={"Trigger": "v1"},
+        )
+        exit_node_routes_resource.node.add_dependency(exit_node_service)
