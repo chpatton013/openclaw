@@ -6,11 +6,17 @@ import urllib.request
 
 import boto3
 
+ecs = boto3.client("ecs")
 sm = boto3.client("secretsmanager")
 
 HEADSCALE_URL = os.environ["HEADSCALE_URL"]
 ADMIN_KEY_SECRET = os.environ["ADMIN_KEY_SECRET"]
 NODE_HOSTNAME = os.environ.get("NODE_HOSTNAME", "aws-exit")
+CLUSTER_ARN = os.environ["CLUSTER_ARN"]
+TASK_DEFINITION_ARN = os.environ["TASK_DEFINITION_ARN"]
+SUBNET_IDS = os.environ["SUBNET_IDS"].split(",")
+SECURITY_GROUP_IDS = os.environ["SECURITY_GROUP_IDS"]
+CONTAINER_NAME = os.environ["CONTAINER_NAME"]
 MAX_WAIT = int(os.environ.get("MAX_WAIT_SECONDS", "300"))
 
 
@@ -32,24 +38,61 @@ def _api(method: str, path: str, key: str, body=None):
         return json.loads(e.read())
 
 
-def _find_node_id(key: str) -> str | None:
+def _find_node(key: str) -> tuple[str | None, list, list]:
+    """Return (node_id, available_routes, approved_routes)."""
     result = _api("GET", "node", key)
     for node in result.get("nodes", []):
-        given = node.get("givenName", "")
-        name = node.get("name", "")
-        if given == NODE_HOSTNAME or name.startswith(NODE_HOSTNAME):
-            return node["id"]
-    return None
+        if node.get("givenName") == NODE_HOSTNAME or node.get("name", "").startswith(
+            NODE_HOSTNAME
+        ):
+            return (
+                node["id"],
+                node.get("availableRoutes", []),
+                node.get("approvedRoutes", []),
+            )
+    return None, [], []
 
 
-def _approve_routes(key: str, node_id: str) -> list[str]:
-    result = _api("GET", f"node/{node_id}/routes", key)
-    approved = []
-    for route in result.get("routes", []):
-        if not route.get("enabled"):
-            _api("POST", f"routes/{route['id']}/enable", key)
-            approved.append(route["prefix"])
-    return approved
+def _run_approve_task(node_id: str) -> str:
+    response = ecs.run_task(
+        cluster=CLUSTER_ARN,
+        taskDefinition=TASK_DEFINITION_ARN,
+        launchType="FARGATE",
+        networkConfiguration={
+            "awsvpcConfiguration": {
+                "subnets": SUBNET_IDS,
+                "securityGroups": [SECURITY_GROUP_IDS],
+                "assignPublicIp": "DISABLED",
+            }
+        },
+        overrides={
+            "containerOverrides": [
+                {
+                    "name": CONTAINER_NAME,
+                    "entryPoint": ["/usr/local/bin/approve-routes"],
+                    "environment": [
+                        {"name": "APPROVE_NODE_ID", "value": node_id},
+                    ],
+                }
+            ]
+        },
+    )
+    tasks = response.get("tasks") or []
+    failures = response.get("failures") or []
+    if failures or not tasks:
+        raise RuntimeError(f"run_task failed: failures={failures}")
+    return tasks[0]["taskArn"]
+
+
+def _wait_for_stop(task_arn: str) -> dict:
+    waiter = ecs.get_waiter("tasks_stopped")
+    waiter.wait(
+        cluster=CLUSTER_ARN,
+        tasks=[task_arn],
+        WaiterConfig={"Delay": 10, "MaxAttempts": 60},
+    )
+    described = ecs.describe_tasks(cluster=CLUSTER_ARN, tasks=[task_arn])
+    return described["tasks"][0]
 
 
 def handler(event, _ctx):
@@ -64,15 +107,31 @@ def handler(event, _ctx):
     key = _get_admin_key()
     deadline = time.time() + MAX_WAIT
     while time.time() < deadline:
-        node_id = _find_node_id(key)
-        if node_id:
-            routes = _api("GET", f"node/{node_id}/routes", key).get("routes", [])
-            if routes:
-                approved = _approve_routes(key, node_id)
-                print(
-                    f"Approved routes for {NODE_HOSTNAME} (node {node_id}): {approved or 'already enabled'}"
-                )
+        node_id, available, approved = _find_node(key)
+        print(
+            f"Node {NODE_HOSTNAME!r}: id={node_id} available={available} approved={approved}"
+        )
+        if node_id and available:
+            if set(available) <= set(approved):
+                print(f"All routes already approved for {NODE_HOSTNAME}")
                 return {"PhysicalResourceId": "headscale-exit-node-routes"}
+            task_arn = _run_approve_task(node_id)
+            print(f"Started approve-routes task {task_arn}")
+            task = _wait_for_stop(task_arn)
+            containers = task.get("containers") or []
+            exit_code = next(
+                (
+                    c.get("exitCode")
+                    for c in containers
+                    if c.get("name") == CONTAINER_NAME
+                ),
+                None,
+            )
+            if exit_code != 0:
+                raise RuntimeError(
+                    f"approve-routes task exited with code {exit_code}: {task_arn}"
+                )
+            return {"PhysicalResourceId": "headscale-exit-node-routes"}
         time.sleep(15)
 
     raise RuntimeError(

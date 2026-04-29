@@ -5,5 +5,6 @@ FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 COPY --from=headscale /ko-app/headscale /usr/local/bin/headscale
 COPY create-api-key.sh /usr/local/bin/create-api-key
-RUN chmod +x /usr/local/bin/create-api-key
+COPY approve-routes.sh /usr/local/bin/approve-routes
+RUN chmod +x /usr/local/bin/create-api-key /usr/local/bin/approve-routes
 ENTRYPOINT ["/usr/local/bin/create-api-key"]

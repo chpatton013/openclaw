@@ -779,6 +779,9 @@ class HeadscaleStack(Stack):
         exit_node_service.node.add_dependency(exit_node_preauthkey_resource)
 
         # Approve advertised exit-node routes once the machine registers.
+        # Reuses the api_key task definition with an entrypoint override to run
+        # approve-routes.sh, which starts a local headscale server and calls
+        # `headscale nodes approve-routes` (gRPC CLI; no REST endpoint in v0.26).
         exit_node_routes_fn = lambda_python.PythonFunction(
             self,
             "ExitNodeRoutesFn",
@@ -791,9 +794,37 @@ class HeadscaleStack(Stack):
                 "HEADSCALE_URL": f"https://{headscale_fqdn}",
                 "ADMIN_KEY_SECRET": admin_api_key_secret.secret_name,
                 "NODE_HOSTNAME": cfg.exit_node.hostname,
+                "CLUSTER_ARN": foundation.cluster.cluster_arn,
+                "TASK_DEFINITION_ARN": api_key_task_defn.task_definition_arn,
+                "SUBNET_IDS": ",".join(
+                    s.subnet_id for s in foundation.vpc.private_subnets
+                ),
+                "SECURITY_GROUP_IDS": headscale_service.security_group.security_group_id,
+                "CONTAINER_NAME": api_key_container.container_name,
             },
         )
         admin_api_key_secret.grant_read(exit_node_routes_fn)
+        exit_node_routes_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["ecs:RunTask"],
+                resources=[api_key_task_defn.task_definition_arn],
+            )
+        )
+        exit_node_routes_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["ecs:DescribeTasks"],
+                resources=["*"],
+            )
+        )
+        exit_node_routes_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["iam:PassRole"],
+                resources=[
+                    api_key_task_defn.task_role.role_arn,
+                    api_key_task_defn.obtain_execution_role().role_arn,
+                ],
+            )
+        )
 
         exit_node_routes_provider = cr.Provider(
             self,
