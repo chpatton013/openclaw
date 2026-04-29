@@ -708,6 +708,12 @@ class HeadscaleStack(Stack):
             )
         )
         exit_node_preauthkey_secret.grant_read(exit_node_execution_role)
+        exit_node_execution_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogStream", "logs:PutLogEvents"],
+                resources=[exit_node_log_group.log_group_arn],
+            )
+        )
         exit_node_linux_params = ecs.LinuxParameters(self, "ExitNodeLinuxParams")
         exit_node_linux_params.add_capabilities(ecs.Capability.NET_ADMIN)
         exit_node_linux_params.add_devices(
@@ -735,7 +741,7 @@ class HeadscaleStack(Stack):
             environment={
                 "TS_USERSPACE": "false",
                 "TS_HOSTNAME": cfg.exit_node.hostname,
-                "TS_EXTRA_ARGS": "--advertise-exit-node",
+                "TS_EXTRA_ARGS": f"--advertise-exit-node --login-server=https://{headscale_fqdn}",
                 "TS_STATE_DIR": "/var/lib/tailscale",
             },
             secrets={
