@@ -610,7 +610,7 @@ class HeadscaleStack(Stack):
             self,
             "ExitNodePreauthkey",
             service_token=exit_node_preauthkey_provider.service_token,
-            properties={"Trigger": "v1"},
+            properties={"Trigger": "v2"},
         )
         exit_node_preauthkey_resource.node.add_dependency(headscale_service.service)
         exit_node_preauthkey_resource.node.add_dependency(api_key_resource)
@@ -835,6 +835,6 @@ class HeadscaleStack(Stack):
             self,
             "ExitNodeRoutes",
             service_token=exit_node_routes_provider.service_token,
-            properties={"Trigger": "v1"},
+            properties={"Trigger": "v2"},
         )
         exit_node_routes_resource.node.add_dependency(exit_node_service)
