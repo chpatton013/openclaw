@@ -621,7 +621,7 @@ class HeadscaleStack(Stack):
             "ExitNodeAsg",
             vpc=foundation.vpc,
             instance_type=ec2.InstanceType(cfg.exit_node.instance_type),
-            machine_image=ecs.EcsOptimizedImage.amazon_linux2(),
+            machine_image=ecs.EcsOptimizedImage.amazon_linux2023(),
             min_capacity=1,
             max_capacity=1,
             vpc_subnets=ec2.SubnetSelection(
