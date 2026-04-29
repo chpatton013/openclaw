@@ -10,6 +10,7 @@ class ExitNodeConfig:
     instance_type: str
     tailscale_image_version: str
     hostname: str
+    preauthkey_user: str
 
     @classmethod
     def load(cls, data: dict[str, Any]) -> Self:
@@ -17,6 +18,7 @@ class ExitNodeConfig:
             instance_type=data["instance_type"],
             tailscale_image_version=data["tailscale_image_version"],
             hostname=data["hostname"],
+            preauthkey_user=data["preauthkey_user"],
         )
 
 

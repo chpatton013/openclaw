@@ -71,6 +71,7 @@ min_healthy_percent = 100
 instance_type = "t3.micro"
 tailscale_image_version = "stable"
 hostname = "aws-exit"
+preauthkey_user = "infra"
 
 [vaultwarden]
 subdomain = "vaultwarden"
