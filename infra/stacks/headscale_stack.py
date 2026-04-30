@@ -595,6 +595,7 @@ class HeadscaleStack(Stack):
                 "ADMIN_KEY_SECRET": admin_api_key_secret.secret_name,
                 "PREAUTHKEY_SECRET": exit_node_preauthkey_secret.secret_name,
                 "PREAUTHKEY_USER": cfg.exit_node.preauthkey_user,
+                "NODE_HOSTNAME": cfg.exit_node.hostname,
             },
         )
         admin_api_key_secret.grant_read(exit_node_preauthkey_fn)

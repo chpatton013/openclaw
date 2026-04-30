@@ -12,6 +12,7 @@ HEADSCALE_URL = os.environ["HEADSCALE_URL"]
 ADMIN_KEY_SECRET = os.environ["ADMIN_KEY_SECRET"]
 PREAUTHKEY_SECRET = os.environ["PREAUTHKEY_SECRET"]
 PREAUTHKEY_USER = os.environ["PREAUTHKEY_USER"]
+NODE_HOSTNAME = os.environ["NODE_HOSTNAME"]
 PLACEHOLDER = "pending"
 
 
@@ -58,13 +59,13 @@ def _ensure_user(key: str) -> str:
     raise RuntimeError(f"Could not find or create user '{PREAUTHKEY_USER}': {result}")
 
 
-def _delete_stale_nodes(key: str, user_id: str) -> None:
-    """Delete offline nodes belonging to the preauthkey user."""
+def _delete_stale_nodes(key: str) -> None:
+    """Delete offline nodes with this hostname."""
     result = _api("GET", "node", key)
     for node in result.get("nodes", []):
-        if node.get("user", {}).get("id") == user_id and not node.get("online"):
+        if node.get("givenName") == NODE_HOSTNAME and not node.get("online"):
             node_id = node["id"]
-            print(f"Deleting stale offline node {node_id} ({node.get('givenName')})")
+            print(f"Deleting stale offline node {node_id} ({NODE_HOSTNAME})")
             _api("DELETE", f"node/{node_id}", key)
 
 
@@ -98,7 +99,7 @@ def handler(event, _ctx):
 
     key = _get_admin_key()
     user_id = _ensure_user(key)
-    _delete_stale_nodes(key, user_id)
+    _delete_stale_nodes(key)
 
     if _current_preauthkey():
         return {"PhysicalResourceId": "headscale-exit-node-preauthkey"}
