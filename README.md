@@ -101,6 +101,39 @@ remaining manual step is the Tailscale SaaS-side registration.
     - After the hosted zone are created, copy the 4 NS records from Route53 into
     the registrar DNS config.
 
+## Operations
+
+### Renaming the Headscale exit-node user
+
+The `headscale.exit_node.preauthkey_user` config value names the Headscale
+user that owns the Tailscale-side preauthkey for the exit node. The
+preauthkey itself lives in Secrets Manager at `headscale/exit-node/preauthkey`
+and is managed by an `ExitNodePreauthkey` Custom Resource Lambda that
+regenerates the key when the stored value isn't a current preauthkey for
+that user.
+
+After changing `preauthkey_user` (or otherwise invalidating the user —
+deleting them in Headplane, restoring Headscale state from a backup,
+etc.) the Lambda will detect the orphan on the next deploy and rotate
+the secret automatically. But the **running ECS task** caches the old
+preauthkey from its `TS_AUTHKEY` env injection; if the task isn't
+otherwise replaced by the deploy, force a new deployment so the fresh
+secret value is read at container start:
+
+```sh
+aws ecs update-service \
+    --cluster <ExitNodeCluster name> \
+    --service <ExitNodeService name> \
+    --force-new-deployment
+```
+
+If the EC2 host's `/var/lib/tailscale` state directory predates the user
+rename, terminate the instance to wipe it — the ASG will replace it,
+and the fresh container will register cleanly via the new preauthkey.
+
+To clean up the orphaned old user, delete it manually in Headplane
+(Headscale's REST API has no idempotent user delete).
+
 ## Manual Bootstrapping
 
 If you don't want to use the automated bootstrapping script, you can perform
