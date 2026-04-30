@@ -58,6 +58,16 @@ def _ensure_user(key: str) -> str:
     raise RuntimeError(f"Could not find or create user '{PREAUTHKEY_USER}': {result}")
 
 
+def _delete_stale_nodes(key: str, user_id: str) -> None:
+    """Delete offline nodes belonging to the preauthkey user."""
+    result = _api("GET", "node", key)
+    for node in result.get("nodes", []):
+        if node.get("user", {}).get("id") == user_id and not node.get("online"):
+            node_id = node["id"]
+            print(f"Deleting stale offline node {node_id} ({node.get('givenName')})")
+            _api("DELETE", f"node/{node_id}", key)
+
+
 def _create_preauthkey(key: str, user_id: str) -> str:
     expiry = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 365 * 86400))
     result = _api(
@@ -86,11 +96,13 @@ def handler(event, _ctx):
             )
         }
 
+    key = _get_admin_key()
+    user_id = _ensure_user(key)
+    _delete_stale_nodes(key, user_id)
+
     if _current_preauthkey():
         return {"PhysicalResourceId": "headscale-exit-node-preauthkey"}
 
-    key = _get_admin_key()
-    user_id = _ensure_user(key)
     preauthkey = _create_preauthkey(key, user_id)
 
     sm.put_secret_value(
