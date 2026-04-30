@@ -11,7 +11,7 @@ sm = boto3.client("secretsmanager")
 HEADSCALE_URL = os.environ["HEADSCALE_URL"]
 ADMIN_KEY_SECRET = os.environ["ADMIN_KEY_SECRET"]
 PREAUTHKEY_SECRET = os.environ["PREAUTHKEY_SECRET"]
-PREAUTHKEY_USER = os.environ.get("PREAUTHKEY_USER", "exit-node")
+PREAUTHKEY_USER = os.environ["PREAUTHKEY_USER"]
 PLACEHOLDER = "pending"
 
 
