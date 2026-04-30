@@ -39,17 +39,22 @@ def _api(method: str, path: str, key: str, body=None):
 
 
 def _find_node(key: str) -> tuple[str | None, list, list]:
-    """Return (node_id, available_routes, approved_routes)."""
+    """Return (node_id, available_routes, approved_routes) for the online
+    node matching NODE_HOSTNAME (or a collision-suffixed variant). Skips
+    offline matches so a stale prior-deploy entry doesn't shadow the
+    current task."""
     result = _api("GET", "node", key)
     for node in result.get("nodes", []):
-        if node.get("givenName") == NODE_HOSTNAME or node.get("name", "").startswith(
-            NODE_HOSTNAME
-        ):
-            return (
-                node["id"],
-                node.get("availableRoutes", []),
-                node.get("approvedRoutes", []),
-            )
+        given = node.get("givenName", "")
+        if not (given == NODE_HOSTNAME or given.startswith(f"{NODE_HOSTNAME}-")):
+            continue
+        if not node.get("online"):
+            continue
+        return (
+            node["id"],
+            node.get("availableRoutes", []),
+            node.get("approvedRoutes", []),
+        )
     return None, [], []
 
 
@@ -69,7 +74,7 @@ def _run_approve_task(node_id: str) -> str:
             "containerOverrides": [
                 {
                     "name": CONTAINER_NAME,
-                    "entryPoint": ["/usr/local/bin/approve-routes"],
+                    "command": ["/usr/local/bin/approve-routes"],
                     "environment": [
                         {"name": "APPROVE_NODE_ID", "value": node_id},
                     ],

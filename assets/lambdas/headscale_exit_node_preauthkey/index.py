@@ -60,13 +60,30 @@ def _ensure_user(key: str) -> str:
 
 
 def _delete_stale_nodes(key: str) -> None:
-    """Delete offline nodes with this hostname."""
+    """Delete offline nodes for this hostname (canonical or
+    collision-suffixed). Online nodes are left alone - this lambda runs
+    before ECS replaces the task, so the currently-online registration
+    still belongs to the live task."""
     result = _api("GET", "node", key)
     for node in result.get("nodes", []):
-        if node.get("givenName") == NODE_HOSTNAME and not node.get("online"):
-            node_id = node["id"]
-            print(f"Deleting stale offline node {node_id} ({NODE_HOSTNAME})")
-            _api("DELETE", f"node/{node_id}", key)
+        given = node.get("givenName", "")
+        if not (given == NODE_HOSTNAME or given.startswith(f"{NODE_HOSTNAME}-")):
+            continue
+        if node.get("online"):
+            continue
+        node_id = node["id"]
+        print(f"Deleting stale offline node {node_id} ({given})")
+        _api("DELETE", f"node/{node_id}", key)
+
+
+def _stored_key_belongs_to_user(key: str, user_id: str, stored: str) -> bool:
+    """Return True if `stored` is a current preauthkey for `user_id` in
+    headscale. Guards against the orphaned-secret case: if the configured
+    user is renamed (or deleted and recreated) while the secret still
+    holds the old user's preauthkey, headscale rejects the registration
+    with 'AuthKey not found'. Regenerate when this returns False."""
+    result = _api("GET", f"preauthkey?user={user_id}", key)
+    return any(k.get("key") == stored for k in result.get("preAuthKeys", []))
 
 
 def _create_preauthkey(key: str, user_id: str) -> str:
@@ -101,7 +118,8 @@ def handler(event, _ctx):
     user_id = _ensure_user(key)
     _delete_stale_nodes(key)
 
-    if _current_preauthkey():
+    stored = _current_preauthkey()
+    if stored and _stored_key_belongs_to_user(key, user_id, stored):
         return {"PhysicalResourceId": "headscale-exit-node-preauthkey"}
 
     preauthkey = _create_preauthkey(key, user_id)
