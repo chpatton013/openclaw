@@ -640,6 +640,19 @@ class HeadscaleStack(Stack):
                 "echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/99-tailscale.conf",
                 "echo 'net.ipv6.conf.all.forwarding = 1' >> /etc/sysctl.d/99-tailscale.conf",
                 "sysctl -p /etc/sysctl.d/99-tailscale.conf",
+                # Tailscale's containerized daemon writes its NAT/forward
+                # rules to the iptables-legacy table family, but Docker on
+                # AL2023 sets the iptables-nft FORWARD policy to DROP - both
+                # filter families are evaluated, so legacy ACCEPTs are
+                # shadowed by nft DROPs and exit-node traffic is silently
+                # dropped. Add the equivalent rules in nft so packets clear
+                # both filters. Interface names: tailscale0 only exists once
+                # the daemon comes up, but iptables resolves -i/-o lazily
+                # at packet time, so adding rules pre-creation is fine.
+                "EGRESS_IF=$(ip -4 route show default | awk '{print $5; exit}')",
+                "iptables -C FORWARD -i tailscale0 -j ACCEPT 2>/dev/null || iptables -I FORWARD 1 -i tailscale0 -j ACCEPT",
+                "iptables -C FORWARD -o tailscale0 -j ACCEPT 2>/dev/null || iptables -I FORWARD 1 -o tailscale0 -j ACCEPT",
+                'iptables -t nat -C POSTROUTING -s 100.64.0.0/10 -o "$EGRESS_IF" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 100.64.0.0/10 -o "$EGRESS_IF" -j MASQUERADE',
             ],
             container_kwargs=dict(
                 memory_limit_mib=256,
