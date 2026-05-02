@@ -5,6 +5,24 @@ metadata:
 # Vaultwarden. Combined with SSO_ONLY=true on the Vaultwarden side, this
 # means only Authentik-authenticated users can sign up or log in.
 entries:
+  # Custom email scope mapping. Authentik's default `email` scope returns
+  # only `email` (no `email_verified`), so Vaultwarden's SSO middleware
+  # treats the verification claim as missing and rejects logins. This
+  # mapping replaces the default `email` for the Vaultwarden provider,
+  # adding `email_verified` sourced from `user.attributes.email_verified`
+  # (which user.yaml seeds to `true`).
+  - model: authentik_providers_oauth2.scopemapping
+    id: vaultwarden-email-scope
+    identifiers:
+      managed: openclaw-vaultwarden-email-scope
+    attrs:
+      name: "OpenClaw Vaultwarden: email + email_verified"
+      scope_name: email
+      expression: |
+        return {
+            "email": request.user.email,
+            "email_verified": request.user.attributes.get("email_verified", False),
+        }
   - model: authentik_providers_oauth2.oauth2provider
     id: vaultwarden-provider
     identifiers:
@@ -21,7 +39,7 @@ entries:
       property_mappings:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
-        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !KeyOf vaultwarden-email-scope
       signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
   - model: authentik_core.application
     identifiers:
