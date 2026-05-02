@@ -11,6 +11,6 @@ here="$(cd -P "$(dirname "$source")" && pwd)"
 repo_root="$(dirname "$here")"
 
 bash "$repo_root/scripts/bootstrap/dotslash.sh"
-uv run \
+"$here/uv" run \
   --with-requirements "$repo_root/scripts/requirements.txt" \
   "$repo_root/scripts/bootstrap/aws_resources.py" "$@"
