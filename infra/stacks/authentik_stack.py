@@ -152,7 +152,7 @@ class AuthentikStack(Stack):
             "AK_BP_HEADPLANE_REDIRECT_URI": imports.headplane_redirect_uri,
             "AK_BP_HEADPLANE_LAUNCH_URL": imports.headplane_launch_url,
             "AK_BP_VAULTWARDEN_REDIRECT_URI": imports.vaultwarden_redirect_uri,
-            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "8",
+            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "9",
         }
 
         common_secrets = {
