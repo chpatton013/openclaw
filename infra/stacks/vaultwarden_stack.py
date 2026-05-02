@@ -94,7 +94,12 @@ class VaultwardenStack(Stack):
 
         environment = {
             "DOMAIN": f"https://{fqdn}",
-            "SIGNUPS_ALLOWED": "false",
+            # SIGNUPS_ALLOWED=true + SSO_ONLY=true: any Authentik-authenticated
+            # user can register on first SSO login; password login + signup are
+            # fully disabled. The Authentik blueprint imposes no group filter,
+            # so the gating is "must have an Authentik account."
+            "SIGNUPS_ALLOWED": "true",
+            "SSO_ONLY": "true",
             "INVITATIONS_ALLOWED": "true",
             "WEBSOCKET_ENABLED": "true",
             "DATA_FOLDER": "/data",

@@ -1,13 +1,10 @@
 version: 1
 metadata:
   name: Vaultwarden OIDC application
+# No group / policybinding: any authenticated Authentik user can SSO into
+# Vaultwarden. Combined with SSO_ONLY=true on the Vaultwarden side, this
+# means only Authentik-authenticated users can sign up or log in.
 entries:
-  - model: authentik_core.group
-    identifiers:
-      name: vaultwarden
-    attrs:
-      users:
-        - !Find [authentik_core.user, [username, !Env AK_BP_USER_USERNAME]]
   - model: authentik_providers_oauth2.oauth2provider
     id: vaultwarden-provider
     identifiers:
@@ -34,9 +31,3 @@ entries:
       provider: !KeyOf vaultwarden-provider
       policy_engine_mode: any
       open_in_new_tab: true
-  - model: authentik_policies.policybinding
-    identifiers:
-      target: !Find [authentik_core.application, [slug, vaultwarden]]
-      group: !Find [authentik_core.group, [name, vaultwarden]]
-    attrs:
-      order: 0
