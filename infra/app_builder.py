@@ -90,6 +90,7 @@ def build_app(
             cfg=cfg.vaultwarden,
             foundation=foundation,
             data=data,
+            authentik_issuer_base=authentik_issuer_base,
         ),
         env=env,
     )

@@ -26,6 +26,7 @@ class VaultwardenImports:
     cfg: VaultwardenConfig
     foundation: FoundationExports
     data: DataExports
+    authentik_issuer_base: str
 
 
 class VaultwardenStack(Stack):
@@ -44,6 +45,7 @@ class VaultwardenStack(Stack):
         data = imports.data
 
         fqdn = f"{cfg.subdomain}.{foundation.public_domain}"
+        oidc_issuer = f"{imports.authentik_issuer_base}/vaultwarden/"
 
         ###
         # Secrets
@@ -56,6 +58,9 @@ class VaultwardenStack(Stack):
         )
         db_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "DbSecret", cfg.db.secret_name
+        )
+        oidc_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "OidcSecret", "authentik/oidc/vaultwarden"
         )
 
         ###
@@ -103,6 +108,10 @@ class VaultwardenStack(Stack):
             "DB_PORT": str(data.database.port),
             "DB_NAME": cfg.db.name,
             "LOG_LEVEL": "info",
+            "SSO_ENABLED": "true",
+            "SSO_AUTHORITY": oidc_issuer,
+            "SSO_PKCE": "true",
+            "SSO_SIGNUPS_MATCH_EMAIL": "true",
         }
         secrets = {
             "ADMIN_TOKEN": ecs.Secret.from_secrets_manager(
@@ -112,6 +121,10 @@ class VaultwardenStack(Stack):
             "SMTP_PASSWORD": ecs.Secret.from_secrets_manager(smtp_secret, "password"),
             "DB_USER": ecs.Secret.from_secrets_manager(db_secret, "username"),
             "DB_PASSWORD": ecs.Secret.from_secrets_manager(db_secret, "password"),
+            "SSO_CLIENT_ID": ecs.Secret.from_secrets_manager(oidc_secret, "client_id"),
+            "SSO_CLIENT_SECRET": ecs.Secret.from_secrets_manager(
+                oidc_secret, "client_secret"
+            ),
         }
 
         image = ecs.ContainerImage.from_registry(
