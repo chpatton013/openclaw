@@ -24,14 +24,10 @@ secret_name = "authentik/database"
 [authentik.server]
 cpu = 1024
 memory_limit_mib = 2048
-desired_count = 1
-min_healthy_percent = 100
 
 [authentik.worker]
 cpu = 1024
 memory_limit_mib = 2048
-desired_count = 1
-min_healthy_percent = 100
 
 [authentik.smtp]
 host = "smtp.chiiiirs.com"
@@ -58,14 +54,10 @@ secret_name = "headscale/database"
 [headscale.headscale]
 cpu = 512
 memory_limit_mib = 1024
-desired_count = 1
-min_healthy_percent = 100
 
 [headscale.headplane]
 cpu = 512
 memory_limit_mib = 1024
-desired_count = 1
-min_healthy_percent = 100
 
 [headscale.exit_node]
 instance_type = "t3.micro"
@@ -84,8 +76,6 @@ secret_name = "vaultwarden/database"
 [vaultwarden.task]
 cpu = 512
 memory_limit_mib = 1024
-desired_count = 1
-min_healthy_percent = 100
 
 [vaultwarden.smtp]
 host = "smtp.chiiiirs.com"

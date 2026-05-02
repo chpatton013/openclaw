@@ -14,6 +14,6 @@ class FargateTaskConfig:
         return cls(
             cpu=data["cpu"],
             memory_limit_mib=data["memory_limit_mib"],
-            desired_count=data["desired_count"],
-            min_healthy_percent=data["min_healthy_percent"],
+            desired_count=data.get("desired_count", 1),
+            min_healthy_percent=data.get("min_healthy_percent", 100),
         )
