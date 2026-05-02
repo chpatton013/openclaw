@@ -25,6 +25,7 @@ def build_app(
     headplane_fqdn = (
         f"{cfg.headscale.headplane_subdomain}.{cfg.foundation.public_domain}"
     )
+    vaultwarden_fqdn = f"{cfg.vaultwarden.subdomain}.{cfg.foundation.public_domain}"
 
     foundation = FoundationStack(
         app,
@@ -55,6 +56,7 @@ def build_app(
             headscale_redirect_uri=f"https://{headscale_fqdn}/oidc/callback",
             headplane_redirect_uri=f"https://{headplane_fqdn}/admin/oidc/callback",
             headplane_launch_url=f"https://{headplane_fqdn}/admin",
+            vaultwarden_redirect_uri=f"https://{vaultwarden_fqdn}/identity/connect/oidc-signin",
         ),
         env=env,
     )

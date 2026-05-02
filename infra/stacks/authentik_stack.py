@@ -34,6 +34,7 @@ class AuthentikImports:
     headscale_redirect_uri: str
     headplane_redirect_uri: str
     headplane_launch_url: str
+    vaultwarden_redirect_uri: str
 
 
 AUTHENTIK_HTTP_PORT = 9000
@@ -85,6 +86,9 @@ class AuthentikStack(Stack):
         )
         headplane_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "HeadplaneOidcSecret", "authentik/oidc/headplane"
+        )
+        vaultwarden_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "VaultwardenOidcSecret", "authentik/oidc/vaultwarden"
         )
 
         ###
@@ -147,7 +151,8 @@ class AuthentikStack(Stack):
             "AK_BP_HEADSCALE_REDIRECT_URI": imports.headscale_redirect_uri,
             "AK_BP_HEADPLANE_REDIRECT_URI": imports.headplane_redirect_uri,
             "AK_BP_HEADPLANE_LAUNCH_URL": imports.headplane_launch_url,
-            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "6",
+            "AK_BP_VAULTWARDEN_REDIRECT_URI": imports.vaultwarden_redirect_uri,
+            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "7",
         }
 
         common_secrets = {
@@ -183,6 +188,12 @@ class AuthentikStack(Stack):
             ),
             "AK_BP_HEADPLANE_CLIENT_SECRET": ecs.Secret.from_secrets_manager(
                 headplane_oidc_secret, "client_secret"
+            ),
+            "AK_BP_VAULTWARDEN_CLIENT_ID": ecs.Secret.from_secrets_manager(
+                vaultwarden_oidc_secret, "client_id"
+            ),
+            "AK_BP_VAULTWARDEN_CLIENT_SECRET": ecs.Secret.from_secrets_manager(
+                vaultwarden_oidc_secret, "client_secret"
             ),
         }
 
