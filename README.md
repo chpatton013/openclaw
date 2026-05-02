@@ -171,6 +171,8 @@ script for each step, or take matters into your own hands.
           seeds both into Authentik on first apply)
         - `bin/aws-write-secret authentik/oidc/headplane -`
           (same shape as headscale)
+        - `bin/aws-write-secret authentik/oidc/vaultwarden -`
+          (same shape as headscale)
         - `bin/aws-write-secret headscale/noise-private-key --template='{}' --key=secret --bytes=32`
         - `bin/aws-write-secret headplane/cookie-secret --template='{}' --key=secret --bytes=32`
         - `echo -n pending | bin/aws-write-secret headscale/admin-api-key --template='{}' --key=secret -  # sentinel placeholder; replaced by HeadscaleStack`
