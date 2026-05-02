@@ -67,7 +67,7 @@ preauthkey_user = "infra"
 
 [vaultwarden]
 subdomain = "vaultwarden"
-image_version = "1.32.7"
+image_version = "1.35.8"
 
 [vaultwarden.db]
 name = "vaultwarden"
