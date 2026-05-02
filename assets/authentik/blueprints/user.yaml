@@ -10,3 +10,5 @@ entries:
       email: !Env AK_BP_USER_EMAIL
       type: internal
       is_active: true
+      attributes:
+        email_verified: true
