@@ -173,6 +173,7 @@ def write_secret(
     / `exclude_punctuation`, which act as a fallback spec and are ignored when
     `provided` is set.
     """
+    print(f"writing secret: {name}")
     label = f"write-secret {name}"
     if provided is not None:
         cmd = _write_secret_cmd(name, template=template, key=key, use_stdin=True)
@@ -221,6 +222,8 @@ def main() -> int:
     parser.add_argument("--headplane-oidc-client-id")
     parser.add_argument("--headplane-oidc-client-secret")
     parser.add_argument("--vaultwarden-admin-token")
+    parser.add_argument("--vaultwarden-oidc-client-id")
+    parser.add_argument("--vaultwarden-oidc-client-secret")
     parser.add_argument("--vaultwarden-smtp-username")
     parser.add_argument("--vaultwarden-smtp-password")
     args = parser.parse_args()
@@ -362,7 +365,7 @@ def main() -> int:
             ),
         )
 
-    for slug in ("headscale", "headplane"):
+    for slug in ("headscale", "headplane", "vaultwarden"):
         name = f"authentik/oidc/{slug}"
         if needs_write(name, existing):
             write_secret(

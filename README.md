@@ -329,9 +329,6 @@ DAG. But they can never declare a cyclical dependency.
         - Services: single Fargate task (`vaultwarden/server`) pulled from
           the Docker Hub pull-through cache
         - Network: public ALB at `vaultwarden.<public_domain>`
-    - TODO:
-        - Wire up Authentik SSO (add `vaultwarden.yaml` blueprint,
-          `authentik/oidc/vaultwarden` secret, `SSO_ENABLED` env)
 - Planned public AWS stacks:
     - Matrix Synapse
     - mail
