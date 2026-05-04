@@ -19,6 +19,7 @@ from aws_cdk import (
     aws_lambda_python_alpha as lambda_python,
     aws_logs as logs,
     aws_route53 as route53,
+    aws_route53_targets as route53_targets,
     aws_secretsmanager as secretsmanager,
     custom_resources as cr,
 )
@@ -144,22 +145,16 @@ class MailStack(Stack):
         ap_clamav = _ap("ClamavAp", "/dms/clamav")
 
         ###
-        # Static EIPs (one per AZ) so the public hostname (and PTR if
-        # ever set up) doesn't churn.
-        #
-        # RemovalPolicy.RETAIN: CFN's EIP delete during rollback has
-        # hit `InvalidCredentials` reliably across two attempts (a
-        # known transient class of error). RETAIN keeps the EIPs so a
-        # rollback can complete cleanly; on real teardown they're
-        # released manually.
-
-        eip1 = ec2.CfnEIP(self, "MailEip1", domain="vpc")
-        eip2 = ec2.CfnEIP(self, "MailEip2", domain="vpc")
-        eip1.apply_removal_policy(RemovalPolicy.RETAIN)
-        eip2.apply_removal_policy(RemovalPolicy.RETAIN)
-
-        ###
         # NLB + Fargate service.
+        #
+        # Auto-assigned IPs (no static EIPs). Rationale: the account's
+        # EIP quota is tight, CFN's EIP delete on rollback has been
+        # flaky, and the originally-cited reason for static EIPs (PTR
+        # records) was already optional in the plan since outbound
+        # mail goes through SES (which has its own clean PTR).
+        # NLB-assigned IPs are stable for the lifetime of the NLB; the
+        # A record is an alias to the NLB DNS name, so IP changes on
+        # NLB recreation are absorbed automatically.
 
         nlb_sg = ec2.SecurityGroup(
             self, "NlbSecurityGroup", vpc=foundation.vpc, allow_all_outbound=True
@@ -171,24 +166,13 @@ class MailStack(Stack):
                 f"public to NLB tcp/{port}",
             )
 
-        public_subnets = foundation.vpc.public_subnets
-        nlb = elbv2.CfnLoadBalancer(
+        nlb = elbv2.NetworkLoadBalancer(
             self,
             "Nlb",
-            type="network",
-            scheme="internet-facing",
-            ip_address_type="ipv4",
-            subnet_mappings=[
-                elbv2.CfnLoadBalancer.SubnetMappingProperty(
-                    subnet_id=public_subnets[0].subnet_id,
-                    allocation_id=eip1.attr_allocation_id,
-                ),
-                elbv2.CfnLoadBalancer.SubnetMappingProperty(
-                    subnet_id=public_subnets[1].subnet_id,
-                    allocation_id=eip2.attr_allocation_id,
-                ),
-            ],
-            security_groups=[nlb_sg.security_group_id],
+            vpc=foundation.vpc,
+            internet_facing=True,
+            cross_zone_enabled=True,
+            security_groups=[nlb_sg],
         )
 
         # docker-mailserver image from the dockerhub pull-through cache.
@@ -396,55 +380,24 @@ class MailStack(Stack):
         )
 
         ###
-        # Target groups + listeners (one per port). Use L1 because the L2
-        # NetworkLoadBalancer requires its own NLB construct (we built the
-        # NLB at L1 to attach EIPs).
+        # Listeners (one per port). L2 `add_listener` returns a listener
+        # that wires its own target group to the service with the
+        # correct ordering, so no manual `add_dependency` is needed.
 
         for name, port in MAIL_PORTS:
-            tg = elbv2.CfnTargetGroup(
-                self,
-                f"Tg{port}",
-                name=f"mail-{name}",
-                protocol="TCP",
-                port=port,
-                target_type="ip",
-                vpc_id=foundation.vpc.vpc_id,
-                health_check_protocol="TCP",
-                health_check_interval_seconds=30,
-                target_group_attributes=[
-                    elbv2.CfnTargetGroup.TargetGroupAttributeProperty(
-                        key="deregistration_delay.timeout_seconds",
-                        value="30",
-                    ),
-                ],
-            )
-            listener = elbv2.CfnListener(
-                self,
+            listener = nlb.add_listener(
                 f"Listener{port}",
-                load_balancer_arn=nlb.ref,
-                protocol="TCP",
                 port=port,
-                default_actions=[
-                    elbv2.CfnListener.ActionProperty(
-                        type="forward",
-                        target_group_arn=tg.ref,
-                    ),
-                ],
+                protocol=elbv2.Protocol.TCP,
             )
-            service.service.attach_to_network_target_group(
-                elbv2.NetworkTargetGroup.from_target_group_attributes(
-                    self,
-                    f"TgImport{port}",
-                    target_group_arn=tg.ref,
-                    load_balancer_arns=nlb.ref,
-                )
+            listener.add_targets(
+                f"Tg{port}",
+                port=port,
+                protocol=elbv2.Protocol.TCP,
+                targets=[service.service],
+                deregistration_delay=Duration.seconds(30),
+                health_check=elbv2.HealthCheck(protocol=elbv2.Protocol.TCP),
             )
-            # ECS rejects RegisterTargets on a TG with no associated LB.
-            # `attach_to_network_target_group` adds a loadBalancers entry
-            # to the service but doesn't infer ordering since the TG is
-            # imported. Force the service to wait for the listener (which
-            # is what binds the TG to the NLB) to exist first.
-            service.service.node.add_dependency(listener)
             service.security_group.add_ingress_rule(
                 nlb_sg,
                 ec2.Port.tcp(port),
@@ -497,8 +450,12 @@ class MailStack(Stack):
             "MailA",
             zone=foundation.public_zone,
             record_name=cfg.subdomain,
-            target=route53.RecordTarget.from_values(eip1.ref, eip2.ref),
-            ttl=Duration.minutes(5),
+            target=route53.RecordTarget.from_alias(
+                cast(
+                    route53.IAliasRecordTarget,
+                    route53_targets.LoadBalancerTarget(nlb),
+                )
+            ),
         )
         route53.MxRecord(
             self,
@@ -513,7 +470,10 @@ class MailStack(Stack):
             "MailSpf",
             zone=foundation.public_zone,
             record_name="",
-            values=[f"v=spf1 include:amazonses.com ip4:{eip1.ref} ip4:{eip2.ref} -all"],
+            # Outbound mail relays through SES so include:amazonses.com is
+            # all that's needed. We don't list ip4: entries because the
+            # NLB-assigned IPs aren't stable across LB recreation.
+            values=["v=spf1 include:amazonses.com -all"],
         )
         route53.TxtRecord(
             self,
