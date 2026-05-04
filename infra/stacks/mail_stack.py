@@ -410,7 +410,7 @@ class MailStack(Stack):
                     ),
                 ],
             )
-            elbv2.CfnListener(
+            listener = elbv2.CfnListener(
                 self,
                 f"Listener{port}",
                 load_balancer_arn=nlb.ref,
@@ -431,6 +431,12 @@ class MailStack(Stack):
                     load_balancer_arns=nlb.ref,
                 )
             )
+            # ECS rejects RegisterTargets on a TG with no associated LB.
+            # `attach_to_network_target_group` adds a loadBalancers entry
+            # to the service but doesn't infer ordering since the TG is
+            # imported. Force the service to wait for the listener (which
+            # is what binds the TG to the NLB) to exist first.
+            service.service.node.add_dependency(listener)
             service.security_group.add_ingress_rule(
                 nlb_sg,
                 ec2.Port.tcp(port),
