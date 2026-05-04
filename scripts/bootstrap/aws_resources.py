@@ -181,12 +181,14 @@ def derive_ses_smtp_password(secret_access_key: str, region: str) -> str:
 
 def find_hosted_zone_id(domain: str) -> str:
     r53 = boto3.client("route53")
-    paginator = r53.get_paginator("list_hosted_zones_by_name")
     target = domain.rstrip(".") + "."
-    for page in paginator.paginate():
-        for zone in page.get("HostedZones", []):
-            if zone["Name"] == target and not zone["Config"].get("PrivateZone"):
-                return zone["Id"].split("/")[-1]
+    # list_hosted_zones_by_name doesn't support boto3 pagination; it
+    # returns zones alphabetically starting from DNSName. Asking for
+    # exactly our target finds the matching zone immediately.
+    response = r53.list_hosted_zones_by_name(DNSName=target, MaxItems="10")
+    for zone in response.get("HostedZones", []):
+        if zone["Name"] == target and not zone["Config"].get("PrivateZone"):
+            return zone["Id"].split("/")[-1]
     raise RuntimeError(f"public hosted zone not found for domain {domain!r}")
 
 
