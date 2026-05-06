@@ -571,7 +571,16 @@ class MailStack(Stack):
             health_check=elbv2.HealthCheck(
                 protocol=elbv2.Protocol.HTTP,
                 path="/",
-                healthy_http_codes="200,401",
+                # Accept any 2xx-4xx so the matcher passes regardless
+                # of rspamd's exact response on `/`. Generous unhealthy
+                # threshold so a cold-starting rspamd doesn't trip the
+                # ECS service circuit breaker before it has a chance
+                # to bind :11334. 5 * 30s = 150s tolerance, within the
+                # FargateService grace period.
+                healthy_http_codes="200-499",
+                healthy_threshold_count=2,
+                unhealthy_threshold_count=5,
+                interval=Duration.seconds(30),
             ),
             targets=[
                 service.service.load_balancer_target(
