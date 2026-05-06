@@ -398,7 +398,7 @@ DAG. But they can never declare a cyclical dependency.
       ClamAV) on Fargate, with AWS SES as the outbound relay.
     - Resources:
         - Services: single Fargate task at `smtp.<public_domain>` with
-          ports 25 / 465 / 587 / 143 / 993 fronted by a public NLB
+          ports 25 / 465 / 587 / 993 fronted by a public NLB
         - Storage: encrypted EFS with three access points
           (`mail`, `config`, `clamav`); daily/weekly snapshots into
           the `openclaw-backups` `BackupVault` from FoundationStack

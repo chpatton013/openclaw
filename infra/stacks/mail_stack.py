@@ -48,7 +48,6 @@ MAIL_PORTS: list[tuple[str, int]] = [
     ("smtp", 25),  # incoming MX + in-VPC submission via mynetworks
     ("smtps", 465),  # implicit-TLS submission
     ("submission", 587),  # STARTTLS submission (SASL required)
-    ("imap", 143),  # STARTTLS IMAP
     ("imaps", 993),  # implicit-TLS IMAP
 ]
 
