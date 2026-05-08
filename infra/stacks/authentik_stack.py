@@ -1,3 +1,7 @@
+import hashlib
+import json
+import pathlib
+import tempfile
 from dataclasses import dataclass
 
 from aws_cdk import (
@@ -47,6 +51,40 @@ PRIVATE_CIDRS = [
     "172.16.0.0/12",
     "192.168.0.0/16",
 ]
+
+
+def _stamp_blueprints(
+    src: pathlib.Path,
+    env: dict[str, str],
+) -> tuple[pathlib.Path, str]:
+    """Stamp a hash comment into each blueprint YAML so its body hash
+    changes whenever any input does, and return (stamped_dir, hash).
+
+    Authentik's blueprint reconciliation skips reapply when the YAML
+    body hash matches the stored hash. Values that flow in via
+    `!Env` placeholders aren't part of that hash, so an env-var-only
+    change (e.g. flipping a redirect URI) leaves the on-disk YAML
+    looking unchanged and the worker silently does nothing. We make
+    those inputs visible to the hash by appending a deterministic
+    `# blueprint-inputs-hash:` comment computed over the YAML
+    contents AND the AK_BP_* env values - any change anywhere flips
+    the hash, the YAML body changes, the worker reapplies.
+
+    The same hash is also used as `AUTHENTIK_BLUEPRINT_SYNC_VERSION`
+    so YAML-only edits (no env-var change) still flip a task-def env
+    var and force the worker to roll.
+    """
+    yamls = sorted((p.name, p.read_text()) for p in src.glob("*.yaml"))
+    digest_input = json.dumps(
+        {"yamls": yamls, "env": dict(sorted(env.items()))},
+        sort_keys=True,
+    )
+    digest = hashlib.sha256(digest_input.encode()).hexdigest()[:16]
+
+    stamped = pathlib.Path(tempfile.mkdtemp(prefix="ak-blueprints-"))
+    for name, body in yamls:
+        (stamped / name).write_text(body + f"\n# blueprint-inputs-hash: {digest}\n")
+    return stamped, digest
 
 
 class AuthentikStack(Stack):
@@ -119,10 +157,29 @@ class AuthentikStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
             auto_delete_objects=False,
         )
+        # Inputs the blueprints reference via `!Env`. Collected here so
+        # the stamping helper can hash them alongside the YAML bodies;
+        # any change here flips the hash and forces a worker reapply.
+        blueprint_env = {
+            "AK_BP_USER_USERNAME": cfg.user.username,
+            "AK_BP_USER_DISPLAY_NAME": cfg.user.display_name,
+            "AK_BP_USER_EMAIL": f"{cfg.user.username}@{foundation.public_domain}",
+            "AK_BP_TAILSCALE_REDIRECT_URI": imports.tailscale_redirect_uri,
+            "AK_BP_HEADSCALE_REDIRECT_URI": imports.headscale_redirect_uri,
+            "AK_BP_HEADPLANE_REDIRECT_URI": imports.headplane_redirect_uri,
+            "AK_BP_HEADPLANE_LAUNCH_URL": imports.headplane_launch_url,
+            "AK_BP_VAULTWARDEN_REDIRECT_URI": imports.vaultwarden_redirect_uri,
+            "AK_BP_RSPAMD_REDIRECT_URI": imports.rspamd_redirect_uri,
+            "AK_BP_ROUNDCUBE_REDIRECT_URI": imports.roundcube_redirect_uri,
+        }
+        stamped_blueprints, blueprint_inputs_hash = _stamp_blueprints(
+            pathlib.Path(assets.blueprints_path("authentik")),
+            blueprint_env,
+        )
         s3deploy.BucketDeployment(
             self,
             "BlueprintsDeployment",
-            sources=[s3deploy.Source.asset(str(assets.blueprints_path("authentik")))],
+            sources=[s3deploy.Source.asset(str(stamped_blueprints))],
             destination_bucket=blueprints_bucket,
             prune=True,
         )
@@ -149,17 +206,12 @@ class AuthentikStack(Stack):
             "AUTHENTIK_STORAGE__S3__BUCKET_NAME": bucket.bucket_name,
             "AUTHENTIK_STORAGE__S3__REGION": Aws.REGION,
             "AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS": ",".join(PRIVATE_CIDRS),
-            "AK_BP_USER_USERNAME": cfg.user.username,
-            "AK_BP_USER_DISPLAY_NAME": cfg.user.display_name,
-            "AK_BP_USER_EMAIL": f"{cfg.user.username}@{foundation.public_domain}",
-            "AK_BP_TAILSCALE_REDIRECT_URI": imports.tailscale_redirect_uri,
-            "AK_BP_HEADSCALE_REDIRECT_URI": imports.headscale_redirect_uri,
-            "AK_BP_HEADPLANE_REDIRECT_URI": imports.headplane_redirect_uri,
-            "AK_BP_HEADPLANE_LAUNCH_URL": imports.headplane_launch_url,
-            "AK_BP_VAULTWARDEN_REDIRECT_URI": imports.vaultwarden_redirect_uri,
-            "AK_BP_RSPAMD_REDIRECT_URI": imports.rspamd_redirect_uri,
-            "AK_BP_ROUNDCUBE_REDIRECT_URI": imports.roundcube_redirect_uri,
-            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": "9",
+            **blueprint_env,
+            # Auto-derived from the blueprint YAMLs + `blueprint_env`
+            # above. Bumps automatically on any change, so the worker
+            # task definition diffs and rolls without anyone having to
+            # remember a manual version bump.
+            "AUTHENTIK_BLUEPRINT_SYNC_VERSION": blueprint_inputs_hash,
         }
 
         common_secrets = {
