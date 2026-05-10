@@ -78,19 +78,15 @@ MACAROON_KEY="$(cat "${DATA}/macaroon_secret_key")"
 FORM_SECRET="$(cat "${DATA}/form_secret")"
 REGISTRATION_SHARED_SECRET="$(cat "${DATA}/registration_shared_secret")"
 
-# 3. ECS-injected secrets onto disk so homeserver.yaml can refer to
-#    them by path (avoids leaking them via process env in core dumps
-#    or `ps`). EFS access point is uid/gid 991 with mode 750, so the
-#    files inherit the same owner.
-echo -n "${DB_PASSWORD}" >"${DATA}/db_password"
-chmod 0600 "${DATA}/db_password"
-echo -n "${OIDC_CLIENT_SECRET}" >"${DATA}/oidc_client_secret"
-chmod 0600 "${DATA}/oidc_client_secret"
-
-# 4. Render homeserver.yaml. Bash interpolates ${...}; Synapse's
+# 3. Render homeserver.yaml. Bash interpolates ${...}; Synapse's
 #    own template syntax `{{ user.preferred_username }}` passes
 #    through as a literal string for Synapse to evaluate at OIDC
-#    callback time.
+#    callback time. DB password and OIDC client_secret are inlined
+#    from ECS-injected env vars - Synapse's database.args go
+#    straight to psycopg2 which has no `password_path` knob, and
+#    the YAML lives on an encrypted EFS access point restricted to
+#    uid/gid 991 mode 750, so the exposure is equivalent to the
+#    macaroon/form keys already in this file.
 cat >"${DATA}/homeserver.yaml" <<EOF
 server_name: "${SERVER_NAME}"
 public_baseurl: "${PUBLIC_BASEURL}"
@@ -109,7 +105,7 @@ database:
   name: psycopg2
   args:
     user: ${DB_USER}
-    password_path: /data/db_password
+    password: "${DB_PASSWORD}"
     host: ${DB_HOST}
     port: ${DB_PORT}
     database: ${DB_NAME}
@@ -142,7 +138,7 @@ oidc_providers:
     idp_name: Authentik
     issuer: "${OIDC_ISSUER}"
     client_id: "${OIDC_CLIENT_ID}"
-    client_secret_path: /data/oidc_client_secret
+    client_secret: "${OIDC_CLIENT_SECRET}"
     scopes: [openid, profile, email]
     user_mapping_provider:
       config:
