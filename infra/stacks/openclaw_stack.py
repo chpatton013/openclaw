@@ -252,6 +252,11 @@ class OpenClawStack(Stack):
             # NOTE: Homebrew installer refuses to run as root, but does need to
             # use sudo for root permissions. `brew shellenv` returns nothing for
             # root user, so it must be run as a non-privileged user.
+            # ssm-user is normally created lazily by SSM on first interactive
+            # session; on a freshly-replaced instance it doesn't exist yet, so
+            # create it explicitly before brew tries to `sudo -iu` into it.
+            "id ssm-user >/dev/null 2>&1 || useradd -m -s /bin/bash ssm-user",
+            'install -d -m 0755 /etc/sudoers.d && echo "ssm-user ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/ssm-user',
             f"curl -fsSL {HOMEBREW_INSTALLER_URI} | sudo -iu ssm-user /bin/bash",
             " ".join(
                 [
