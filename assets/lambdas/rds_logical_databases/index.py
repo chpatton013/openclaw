@@ -86,7 +86,17 @@ def handler(event, _ctx):
             if db in existing_dbs:
                 admin.run(f'ALTER DATABASE "{db}" OWNER TO "{user}"')
             else:
-                admin.run(f'CREATE DATABASE "{db}" OWNER "{user}"')
+                clauses = [f'CREATE DATABASE "{db}" OWNER "{user}"']
+                collation = entry.get("Collation")
+                ctype = entry.get("Ctype")
+                template = entry.get("Template")
+                if collation:
+                    clauses.append(f"LC_COLLATE '{_escape_literal(collation)}'")
+                if ctype:
+                    clauses.append(f"LC_CTYPE '{_escape_literal(ctype)}'")
+                if template:
+                    clauses.append(f'TEMPLATE "{_validate_ident(template)}"')
+                admin.run(" ".join(clauses))
                 existing_dbs.add(db)
 
             provisioned.append((db, user))

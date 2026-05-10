@@ -41,6 +41,7 @@ class AuthentikImports:
     vaultwarden_redirect_uri: str
     rspamd_redirect_uri: str
     roundcube_redirect_uri: str
+    matrix_redirect_uri: str
 
 
 AUTHENTIK_HTTP_PORT = 9000
@@ -133,6 +134,9 @@ class AuthentikStack(Stack):
         roundcube_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
             self, "RoundcubeOidcSecret", "authentik/oidc/roundcube"
         )
+        matrix_oidc_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "MatrixOidcSecret", "authentik/oidc/matrix"
+        )
 
         ###
         # Storage
@@ -171,6 +175,7 @@ class AuthentikStack(Stack):
             "AK_BP_VAULTWARDEN_REDIRECT_URI": imports.vaultwarden_redirect_uri,
             "AK_BP_RSPAMD_REDIRECT_URI": imports.rspamd_redirect_uri,
             "AK_BP_ROUNDCUBE_REDIRECT_URI": imports.roundcube_redirect_uri,
+            "AK_BP_MATRIX_REDIRECT_URI": imports.matrix_redirect_uri,
         }
         stamped_blueprints, blueprint_inputs_hash = _stamp_blueprints(
             pathlib.Path(assets.blueprints_path("authentik")),
@@ -259,6 +264,12 @@ class AuthentikStack(Stack):
             ),
             "AK_BP_ROUNDCUBE_CLIENT_SECRET": ecs.Secret.from_secrets_manager(
                 roundcube_oidc_secret, "client_secret"
+            ),
+            "AK_BP_MATRIX_CLIENT_ID": ecs.Secret.from_secrets_manager(
+                matrix_oidc_secret, "client_id"
+            ),
+            "AK_BP_MATRIX_CLIENT_SECRET": ecs.Secret.from_secrets_manager(
+                matrix_oidc_secret, "client_secret"
             ),
         }
 

@@ -7,6 +7,7 @@ from .stacks.data_stack import DataImports, DataStack
 from .stacks.foundation_stack import FoundationImports, FoundationStack
 from .stacks.headscale_stack import HeadscaleImports, HeadscaleStack
 from .stacks.mail_stack import MailImports, MailStack
+from .stacks.matrix_stack import MatrixImports, MatrixStack
 from .stacks.openclaw_stack import OpenClawImports, OpenClawStack
 from .stacks.site_stack import SiteImports, SiteStack
 from .stacks.vaultwarden_stack import VaultwardenImports, VaultwardenStack
@@ -36,6 +37,8 @@ def build_app(
     # Roundcube 1.6's oauth2 plugin expects the IDP to redirect back to
     # the bare Roundcube root with `code` + `state` query params.
     roundcube_redirect_uri = f"https://{roundcube_fqdn}/index.php/login/oauth"
+    matrix_fqdn = f"{cfg.matrix.subdomain}.{cfg.foundation.public_domain}"
+    matrix_redirect_uri = f"https://{matrix_fqdn}/_synapse/client/oidc/callback"
 
     # CloudFront / ACM-for-CloudFront only live in us-east-1, so SiteStack
     # is pinned there. Everything else stays in the app's primary region;
@@ -55,7 +58,12 @@ def build_app(
         imports=DataImports(
             cfg=cfg.data,
             foundation=foundation,
-            databases=[cfg.authentik.db, cfg.headscale.db, cfg.vaultwarden.db],
+            databases=[
+                cfg.authentik.db,
+                cfg.headscale.db,
+                cfg.vaultwarden.db,
+                cfg.matrix.db,
+            ],
             assets=assets,
         ),
         env=env,
@@ -75,6 +83,7 @@ def build_app(
             vaultwarden_redirect_uri=f"https://{vaultwarden_fqdn}/identity/connect/oidc-signin",
             rspamd_redirect_uri=rspamd_redirect_uri,
             roundcube_redirect_uri=roundcube_redirect_uri,
+            matrix_redirect_uri=matrix_redirect_uri,
         ),
         env=env,
     )
@@ -138,6 +147,17 @@ def build_app(
         ),
         env=env,
     )
+    MatrixStack(
+        app,
+        "MatrixStack",
+        imports=MatrixImports(
+            cfg=cfg.matrix,
+            foundation=foundation,
+            data=data,
+            authentik_issuer_base=authentik_issuer_base,
+        ),
+        env=env,
+    )
     SiteStack(
         app,
         "SiteStack",
@@ -146,6 +166,7 @@ def build_app(
             foundation=foundation,
             assets=assets,
             webfinger_api_domain=webfinger.api_invoke_domain,
+            matrix_fqdn=matrix_fqdn,
         ),
         env=site_env,
         cross_region_references=True,

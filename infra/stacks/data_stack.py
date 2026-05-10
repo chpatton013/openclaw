@@ -93,13 +93,18 @@ class DataStack(Stack):
                 self, f"DbSecret-{db_cfg.name}", db_cfg.secret_name
             )
             db_secret.grant_read(init_fn)
-            database_entries.append(
-                {
-                    "Name": db_cfg.name,
-                    "User": db_cfg.name,
-                    "SecretArn": db_secret.secret_arn,
-                }
-            )
+            entry = {
+                "Name": db_cfg.name,
+                "User": db_cfg.name,
+                "SecretArn": db_secret.secret_arn,
+            }
+            if db_cfg.collation is not None:
+                entry["Collation"] = db_cfg.collation
+            if db_cfg.ctype is not None:
+                entry["Ctype"] = db_cfg.ctype
+            if db_cfg.template is not None:
+                entry["Template"] = db_cfg.template
+            database_entries.append(entry)
 
         provider = cr.Provider(
             self,

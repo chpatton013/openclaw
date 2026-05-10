@@ -8,6 +8,7 @@ from .data_config import DataConfig
 from .foundation_config import FoundationConfig
 from .headscale_config import HeadscaleConfig
 from .mail_config import MailConfig
+from .matrix_config import MatrixConfig
 from .site_config import SiteConfig
 from .vaultwarden_config import VaultwardenConfig
 from .webfinger_config import WebFingerConfig
@@ -23,6 +24,7 @@ class AppConfig:
     headscale: HeadscaleConfig
     vaultwarden: VaultwardenConfig
     mail: MailConfig
+    matrix: MatrixConfig
     site: SiteConfig
     webmail: WebmailConfig
 
@@ -36,6 +38,7 @@ class AppConfig:
             headscale=HeadscaleConfig.load(data["headscale"]),
             vaultwarden=VaultwardenConfig.load(data["vaultwarden"]),
             mail=MailConfig.load(data["mail"]),
+            matrix=MatrixConfig.load(data["matrix"]),
             site=SiteConfig.load(data["site"]),
             webmail=WebmailConfig.load(data["webmail"]),
         )

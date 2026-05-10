@@ -31,6 +31,11 @@ class SiteImports:
     # serve a static landing page from S3 by default while preserving
     # WebFinger discovery for Tailscale OIDC.
     webfinger_api_domain: str
+    # Matrix homeserver FQDN (e.g. "matrix.chiiiirs.com"). Embedded in
+    # `/.well-known/matrix/{server,client}` JSON served from the apex
+    # so federating servers and Matrix clients can discover the
+    # homeserver without us running it directly at the apex.
+    matrix_fqdn: str
 
 
 class SiteStack(Stack):
@@ -117,6 +122,33 @@ class SiteStack(Stack):
             destination_bucket=bucket,
             distribution=distribution,
             distribution_paths=["/*"],
+        )
+
+        # Matrix federation/client discovery served from the apex.
+        # Synapse lives at matrix.<public_domain>; these JSON files
+        # tell Matrix federation peers and clients to look there.
+        # Path keys deliberately have no `.json` extension (Matrix
+        # spec requires `.well-known/matrix/server` exactly), so we
+        # set Content-Type explicitly. `prune=False` avoids fighting
+        # the main `SiteContent` deployment over object retention.
+        s3deploy.BucketDeployment(
+            self,
+            "MatrixWellKnown",
+            sources=[
+                s3deploy.Source.json_data(
+                    ".well-known/matrix/server",
+                    {"m.server": f"{imports.matrix_fqdn}:443"},
+                ),
+                s3deploy.Source.json_data(
+                    ".well-known/matrix/client",
+                    {"m.homeserver": {"base_url": f"https://{imports.matrix_fqdn}"}},
+                ),
+            ],
+            destination_bucket=bucket,
+            distribution=distribution,
+            distribution_paths=["/.well-known/matrix/*"],
+            content_type="application/json",
+            prune=False,
         )
 
         target = route53.RecordTarget.from_alias(

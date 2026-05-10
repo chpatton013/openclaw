@@ -129,3 +129,28 @@ cpu = 256
 memory_limit_mib = 512
 desired_count = 1
 min_healthy_percent = 0
+
+[matrix]
+# Self-hosted Matrix Synapse homeserver. Federates publicly with the
+# rest of Matrix; OIDC SSO via Authentik. server_name is the apex
+# (chiiiirs.com) so MXIDs look like `@chris:chiiiirs.com`; the actual
+# Synapse listener lives at matrix.<public_domain>, advertised via
+# `.well-known/matrix/server` from SiteStack.
+subdomain = "matrix"
+image_version = "v1.152.1"
+remote_media_lifetime = "90d"
+
+[matrix.task]
+cpu = 1024
+memory_limit_mib = 2048
+desired_count = 1
+min_healthy_percent = 0
+
+[matrix.db]
+name = "matrix"
+secret_name = "matrix/database"
+# Synapse refuses to start unless the database was created with C
+# locale + template0. The rds_logical_databases Lambda picks these up.
+collation = "C"
+ctype = "C"
+template = "template0"

@@ -76,6 +76,9 @@ class TestSynth(unittest.TestCase):
     def test_openclaw_stack(self) -> None:
         self.assertIn("Resources", self._template("OpenClawStack"))
 
+    def test_matrix_stack(self) -> None:
+        self.assertIn("Resources", self._template("MatrixStack"))
+
 
 if __name__ == "__main__":
     unittest.main()
