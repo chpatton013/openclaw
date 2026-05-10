@@ -170,6 +170,88 @@ and the fresh container will register cleanly via the new preauthkey.
 To clean up the orphaned old user, delete it manually in Headplane
 (Headscale's REST API has no idempotent user delete).
 
+### Renaming the project
+
+The umbrella has two distinct identifiers:
+
+- **Repo name** (e.g. `chiiiirrus`) — names the on-disk directory and
+  the GitHub repository. Embedded in the README badge URL and in the
+  Claude memory directory path. Per-fork; pick whatever you like.
+- **Project name** (e.g. `chiiiirs`) — `[foundation].project_name` in
+  `config.toml`. Used as the prefix for shared AWS resources whose
+  names span the umbrella (currently just the shared `BackupVault`,
+  named `<project_name>-backups`).
+
+Anything named after a *service* (e.g. the OpenClaw EC2 instance, the
+`mail-efs-backups` BackupPlan, Authentik OIDC scope mappings) is
+service-scoped, not umbrella-scoped, and is not affected by this
+rename.
+
+#### 1. Rename the GitHub repo and the local checkout
+
+```sh
+mv ~/github/<owner>/<old-repo> ~/github/<owner>/<new-repo>
+cd ~/github/<owner>/<new-repo>
+git remote set-url origin git@github.com:<owner>/<new-repo>.git
+```
+
+Then go to GitHub → repo → Settings → "Rename" and apply the new
+name. GitHub keeps a 301 redirect from the old URLs, so existing
+clones keep resolving — but the README badge embeds the URL literally
+and needs an in-tree update (line 3).
+
+If you use Claude Code, its per-project memory directory is derived
+from the cwd, so move that too to preserve history:
+
+```sh
+mv ~/.claude/projects/-Users-<you>-github-<owner>-<old-repo> \
+   ~/.claude/projects/-Users-<you>-github-<owner>-<new-repo>
+```
+
+#### 2. Change the project name
+
+Edit `[foundation].project_name` in `config.toml`. The shared
+`BackupVault`'s physical name is templated from this value, and
+`vault_name` is immutable in CloudFormation — so a rename requires a
+**three-deploy dance**, because the BackupPlans in MailStack and
+OpenClawStack reference the vault via cross-stack export, and CFN
+won't let you delete an export that's still imported:
+
+1. **Drop the consumers' references.** Comment out the `BackupPlan` /
+   `add_selection` blocks in `infra/stacks/mail_stack.py` and
+   `infra/stacks/openclaw_stack.py`, then deploy:
+   ```sh
+   bin/cdk deploy MailStack OpenClawStack --exclusively
+   ```
+   This removes the import side of the export.
+2. **Rename the vault.** Deploy FoundationStack — CFN replaces the
+   vault under the new name and orphans the old one (it has
+   `RemovalPolicy.RETAIN` and pre-existing recovery points anyway):
+   ```sh
+   bin/cdk deploy FoundationStack
+   ```
+3. **Restore the consumers.** Revert the BackupPlan removal from step
+   1 and redeploy. CDK now needs FoundationStack to re-emit the
+   export (it's only emitted when something imports it), so include
+   it in the deploy:
+   ```sh
+   bin/cdk deploy FoundationStack MailStack OpenClawStack --exclusively
+   ```
+
+The old `<old-project>-backups` vault lingers with its recovery points
+intact. AWS Backup refuses to delete a non-empty vault, so wait for
+your longest retention window to age out (90 days for OpenClaw's
+monthly rule × 3) and then delete it via the AWS Backup console. No
+new backups land in the old vault during or after the migration.
+
+If a prior failed attempt already created the new-named vault, CFN
+will refuse to re-create it ("Backup vault with the same name already
+exists"). Delete the empty orphan first:
+
+```sh
+bin/aws backup delete-backup-vault --backup-vault-name <new-project>-backups
+```
+
 ## Manual Bootstrapping
 
 If you don't want to use the automated bootstrapping script, you can perform
