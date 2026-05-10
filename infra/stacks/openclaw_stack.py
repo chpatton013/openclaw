@@ -323,11 +323,14 @@ class OpenClawStack(Stack):
             # guard, so call the binary by absolute path.
             #
             # @matrix-org/matrix-sdk-crypto-nodejs has a postinstall
-            # script that downloads the platform-specific native
-            # binding (.node file). pnpm v11's onlyBuiltDependencies
-            # gate doesn't honor the package.json field
-            # non-interactively, so run the download script
-            # explicitly after install instead.
+            # that downloads its platform-specific native binding
+            # (.node file). pnpm v11 errors out under
+            # --frozen-lockfile when any package's build script
+            # would be skipped (the `ERR_PNPM_IGNORED_BUILDS`
+            # gate), and its onlyBuiltDependencies allowlist isn't
+            # accepted non-interactively. Workaround: install with
+            # --ignore-scripts (no complaint, exits 0) and run the
+            # downloader by hand right after.
             #
             # Using `tsc` directly instead of `pnpm run build` -
             # `pnpm run` does an extra dep-status round-trip that
@@ -337,7 +340,7 @@ class OpenClawStack(Stack):
             + " && ".join(
                 [
                     f"cd {MATRIX_BOT_INSTALL_DIR!s}",
-                    "~/.local/share/pnpm/bin/pnpm install --frozen-lockfile",
+                    "~/.local/share/pnpm/bin/pnpm install --frozen-lockfile --ignore-scripts",
                     "(cd node_modules/@matrix-org/matrix-sdk-crypto-nodejs && node download-lib.js)",
                     "./node_modules/.bin/tsc",
                 ]
