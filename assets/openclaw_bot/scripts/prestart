@@ -1,0 +1,29 @@
+#!/bin/bash
+#
+# systemd ExecStartPre helper for openclaw-matrix-bot.service.
+# Fetches the bot's Matrix access token from Secrets Manager and the
+# control-room ID from SSM Parameter Store, writing them to files
+# under $RUNTIME_DIRECTORY (set by systemd for the user unit).
+# The bot reads the token via BOT_ACCESS_TOKEN_FILE; CONTROL_ROOM_ID
+# is loaded via EnvironmentFile= back into the unit's process env.
+
+set -euo pipefail
+
+: "${RUNTIME_DIRECTORY:?RUNTIME_DIRECTORY must be set by systemd}"
+: "${BOT_TOKEN_SECRET_ID:?BOT_TOKEN_SECRET_ID must be set in the unit}"
+: "${CONTROL_ROOM_PARAM:?CONTROL_ROOM_PARAM must be set in the unit}"
+
+aws secretsmanager get-secret-value \
+  --secret-id "$BOT_TOKEN_SECRET_ID" \
+  --query SecretString --output text |
+  python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])' \
+    >"$RUNTIME_DIRECTORY/access-token"
+chmod 0600 "$RUNTIME_DIRECTORY/access-token"
+
+control_room_id="$(aws ssm get-parameter \
+  --name "$CONTROL_ROOM_PARAM" \
+  --query Parameter.Value --output text)"
+
+printf 'CONTROL_ROOM_ID=%s\n' "$control_room_id" \
+  >"$RUNTIME_DIRECTORY/env"
+chmod 0600 "$RUNTIME_DIRECTORY/env"

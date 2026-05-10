@@ -30,6 +30,12 @@ class AssetLoader:
             raise FileNotFoundError(f"site asset not found: {path}")
         return path
 
+    def openclaw_bot_path(self) -> pathlib.Path:
+        path = self._assets / "openclaw_bot"
+        if not path.is_dir():
+            raise FileNotFoundError(f"openclaw_bot asset not found: {path}")
+        return path
+
     @functools.cache
     def read_text(self, *parts: str) -> str:
         return (self._assets.joinpath(*parts)).read_text()

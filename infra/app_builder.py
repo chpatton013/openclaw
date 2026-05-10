@@ -175,6 +175,11 @@ def build_app(
     OpenClawStack(
         app,
         "OpenClawStack",
-        imports=OpenClawImports(foundation=foundation),
+        imports=OpenClawImports(
+            foundation=foundation,
+            assets=assets,
+            matrix_homeserver_url=f"https://{matrix_fqdn}",
+            allowed_sender=f"@{cfg.authentik.user.username}:{cfg.foundation.public_domain}",
+        ),
         env=env,
     )

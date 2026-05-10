@@ -43,6 +43,7 @@ include_files = ["**/*.rs"]
 include_files = [
   "**/*.bash",
   "**/*.sh",
+  "assets/openclaw_bot/scripts/prestart",
   "bin/aws",
   "bin/aws-create-hosted-zone",
   "bin/aws-write-secret",
@@ -57,6 +58,7 @@ include_files = [
 include_files = [
   "**/*.bash",
   "**/*.sh",
+  "assets/openclaw_bot/scripts/prestart",
   "bin/aws",
   "bin/aws-create-hosted-zone",
   "bin/aws-write-secret",
@@ -78,9 +80,11 @@ include_files = ["**/*.xml"]
 
 [validator.yamlfmt]
 include_files = ["**/*.yaml", "**/*.yml"]
+exclude_files = ["**/pnpm-lock.yaml"]
 
 [validator.yamllint]
 include_files = ["**/*.yaml", "**/*.yml"]
+exclude_files = ["**/pnpm-lock.yaml"]
 
 [validator.case-conflict]
 include_files = ["**"]

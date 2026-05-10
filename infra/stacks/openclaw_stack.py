@@ -2,6 +2,7 @@ import pathlib
 from dataclasses import dataclass
 
 from aws_cdk import (
+    Aws,
     CfnOutput,
     Duration,
     Stack,
@@ -13,15 +14,20 @@ from aws_cdk import (
     aws_efs as efs,
     aws_events as events,
     aws_iam as iam,
+    aws_s3_assets as s3_assets,
 )
 from constructs import Construct
 
+from ..models.asset_loader import AssetLoader
 from ..models.foundation_exports import FoundationExports
 
 
 @dataclass(frozen=True)
 class OpenClawImports:
     foundation: FoundationExports
+    assets: AssetLoader
+    matrix_homeserver_url: str
+    allowed_sender: str
 
 
 EFS_MOUNTPOINT_DIR = pathlib.Path("/data")
@@ -29,6 +35,15 @@ OPENCLAW_ROOT_DIR = EFS_MOUNTPOINT_DIR / "openclaw"
 OPENCLAW_HOME_DIR = OPENCLAW_ROOT_DIR / "home"
 OPENCLAW_STATE_DIR = OPENCLAW_ROOT_DIR / "state"
 OPENCLAW_WORKSPACES_DIR = OPENCLAW_ROOT_DIR / "workspaces"
+MATRIX_BOT_DIR = EFS_MOUNTPOINT_DIR / "matrix-bot"
+MATRIX_BOT_INSTALL_DIR = pathlib.Path("/opt/openclaw-matrix-bot")
+MATRIX_BOT_RUNTIME_DIR = pathlib.Path("/run/openclaw-matrix-bot")
+MATRIX_BOT_TOKEN_SECRET = "matrix/openclaw-bot-token"
+MATRIX_BOT_CONTROL_ROOM_PARAM = "/openclaw-matrix-bot/control-room-id"
+# Tentative path: openclaw onboard --gateway-auth token writes the
+# token here in current versions. Override the systemd unit's
+# Environment= if the path differs in future openclaw releases.
+MATRIX_BOT_GATEWAY_TOKEN_PATH = OPENCLAW_STATE_DIR / "gateway-token"
 NODESOURCE_KEY_URI = "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
 NODESOURCE_REPO_URI = "https://deb.nodesource.com/node_24.x"
 NODESOURCE_KEY_PATH = pathlib.Path("/etc/apt/keyrings/nodesource.gpg")
@@ -146,6 +161,39 @@ class OpenClawStack(Stack):
             ],
         )
         filesystem.grant_read_write(role)
+
+        # Matrix bot resources the EC2 instance pulls at runtime: the
+        # bot's access token from Secrets Manager and the control
+        # room ID from SSM Parameter Store. The control-room
+        # parameter is created manually post-deploy after I invite
+        # the bot to a fresh DM room.
+        role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["secretsmanager:GetSecretValue"],
+                resources=[
+                    f"arn:aws:secretsmanager:{Aws.REGION}:{Aws.ACCOUNT_ID}:secret:{MATRIX_BOT_TOKEN_SECRET}-*"
+                ],
+            )
+        )
+        role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["ssm:GetParameter"],
+                resources=[
+                    f"arn:aws:ssm:{Aws.REGION}:{Aws.ACCOUNT_ID}:parameter{MATRIX_BOT_CONTROL_ROOM_PARAM}"
+                ],
+            )
+        )
+
+        # Upload the bot source as an S3 asset; user-data fetches and
+        # installs it locally on the instance. node_modules + dist
+        # are .gitignore'd and rebuilt on the host so the deploy
+        # bundle stays small.
+        bot_asset = s3_assets.Asset(
+            self,
+            "MatrixBotAsset",
+            path=str(imports.assets.openclaw_bot_path()),
+        )
+        bot_asset.grant_read(role)
         efs_fstab = " ".join(
             [
                 f"{filesystem.file_system_id}:/",
@@ -244,6 +292,76 @@ class OpenClawStack(Stack):
             #     "sudo -iu ubuntu XDG_RUNTIME_DIR=\"/run/user/$(id -u ubuntu)\"",
             #     "openclaw completion --install",
             # ]),
+            # Matrix bot install: fetch the bot source bundle from
+            # S3, unpack into /opt, install deps + build, then drop a
+            # systemd user unit that runs it as ubuntu. The bot's
+            # E2E + sync state lives under /data/matrix-bot on EFS so
+            # device verification persists across instance
+            # replacements.
+            "apt-get install -y unzip awscli python3",
+            f"mkdir -p {MATRIX_BOT_INSTALL_DIR!s} {MATRIX_BOT_DIR!s}",
+            f"chown -R ubuntu:ubuntu {MATRIX_BOT_DIR!s}",
+            f"aws s3 cp s3://{bot_asset.s3_bucket_name}/{bot_asset.s3_object_key} /tmp/openclaw_bot.zip",
+            f"unzip -oq /tmp/openclaw_bot.zip -d {MATRIX_BOT_INSTALL_DIR!s}",
+            f"chown -R ubuntu:ubuntu {MATRIX_BOT_INSTALL_DIR!s}",
+            f"chmod +x {MATRIX_BOT_INSTALL_DIR!s}/scripts/prestart",
+            " ".join(
+                [
+                    "sudo -iu ubuntu",
+                    f"bash -lc 'cd {MATRIX_BOT_INSTALL_DIR!s} && pnpm install --frozen-lockfile && pnpm run build'",
+                ]
+            ),
+            "install -d -m 0755 /home/ubuntu/.config/systemd/user",
+            "\n".join(
+                [
+                    "cat >/home/ubuntu/.config/systemd/user/openclaw-matrix-bot.service <<'EOF'",
+                    "[Unit]",
+                    "Description=OpenClaw Matrix bot",
+                    "After=network-online.target",
+                    "Wants=network-online.target",
+                    "",
+                    "[Service]",
+                    "Type=simple",
+                    f"WorkingDirectory={MATRIX_BOT_INSTALL_DIR!s}",
+                    "RuntimeDirectory=openclaw-matrix-bot",
+                    "RuntimeDirectoryMode=0700",
+                    f"Environment=HOMESERVER_URL={imports.matrix_homeserver_url}",
+                    f"Environment=ALLOWED_SENDER={imports.allowed_sender}",
+                    f"Environment=MATRIX_BOT_DATA_DIR={MATRIX_BOT_DIR!s}",
+                    "Environment=OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789",
+                    f"Environment=OPENCLAW_GATEWAY_TOKEN_FILE={MATRIX_BOT_GATEWAY_TOKEN_PATH!s}",
+                    "Environment=BOT_ACCESS_TOKEN_FILE=%t/openclaw-matrix-bot/access-token",
+                    f"Environment=BOT_TOKEN_SECRET_ID={MATRIX_BOT_TOKEN_SECRET}",
+                    f"Environment=CONTROL_ROOM_PARAM={MATRIX_BOT_CONTROL_ROOM_PARAM}",
+                    "EnvironmentFile=-%t/openclaw-matrix-bot/env",
+                    f"ExecStartPre={MATRIX_BOT_INSTALL_DIR!s}/scripts/prestart",
+                    f"ExecStart=/usr/bin/node {MATRIX_BOT_INSTALL_DIR!s}/dist/index.js",
+                    "Restart=on-failure",
+                    "RestartSec=10s",
+                    "",
+                    "[Install]",
+                    "WantedBy=default.target",
+                    "EOF",
+                ]
+            ),
+            "chown ubuntu:ubuntu /home/ubuntu/.config/systemd/user/openclaw-matrix-bot.service",
+            "chmod 0644 /home/ubuntu/.config/systemd/user/openclaw-matrix-bot.service",
+            # Enable + start. Will fail loudly if the SSM parameter
+            # isn't yet populated; that's expected on first deploy
+            # before I create the control room. `restart` after
+            # populating the param is the manual recovery.
+            " ".join(
+                [
+                    'sudo -iu ubuntu XDG_RUNTIME_DIR="/run/user/$(id -u ubuntu)"',
+                    "systemctl --user daemon-reload",
+                ]
+            ),
+            " ".join(
+                [
+                    'sudo -iu ubuntu XDG_RUNTIME_DIR="/run/user/$(id -u ubuntu)"',
+                    "systemctl --user enable openclaw-matrix-bot.service",
+                ]
+            ),
             "",
         )
 
