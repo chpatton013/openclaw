@@ -9,6 +9,7 @@ import {
   SimpleFsStorageProvider,
 } from "matrix-bot-sdk";
 
+import { ensureCrossSigning } from "./crosssigning.js";
 import { forwardToGateway } from "./openclaw.js";
 
 interface Config {
@@ -245,6 +246,7 @@ async function main(): Promise<void> {
       `control room ${controlRoomId} is not encrypted; refusing to run`,
     );
   }
+  await ensureCrossSigning(client, cfg.dataDir, log);
   log("info", `bot running; user_id=${await client.getUserId()}`);
 }
 
