@@ -154,6 +154,7 @@ def build_app(
             cfg=cfg.matrix,
             foundation=foundation,
             data=data,
+            assets=assets,
             authentik_issuer_base=authentik_issuer_base,
         ),
         env=env,

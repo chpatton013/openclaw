@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from typing import cast
 
 from aws_cdk import (
+    CustomResource,
     Duration,
     RemovalPolicy,
     Stack,
@@ -10,12 +12,18 @@ from aws_cdk import (
     aws_efs as efs,
     aws_elasticloadbalancingv2 as elbv2,
     aws_events as events,
+    aws_iam as iam,
+    aws_lambda as lambda_,
+    aws_lambda_python_alpha as lambda_python,
+    aws_logs as logs,
     aws_secretsmanager as secretsmanager,
+    custom_resources as cr,
 )
 from constructs import Construct
 
 from ..constructs.fargate_service import PrivateEgressFargateService
 from ..constructs.public_http_alb import PublicHttpAlb
+from ..models.asset_loader import AssetLoader
 from ..models.data_exports import DataExports
 from ..models.foundation_exports import FoundationExports
 from ..models.matrix_config import MatrixConfig
@@ -42,7 +50,39 @@ class MatrixImports:
     cfg: MatrixConfig
     foundation: FoundationExports
     data: DataExports
+    assets: AssetLoader
     authentik_issuer_base: str
+
+
+# Bootstrap script for the one-shot bot-account task. Runs on the
+# Synapse image so it can use the bundled `register_new_matrix_user`
+# script. Reads the registration_shared_secret out of the
+# init-container-rendered homeserver.yaml on EFS, registers
+# `@openclaw-bot:<server_name>` with a fresh random password, then
+# logs in to obtain an access token + device id and emits a single
+# JSON line on stdout for the bootstrap Lambda to parse and write
+# into Secrets Manager.
+_BOOTSTRAP_SCRIPT = r"""
+set -euo pipefail
+BOT_USERNAME=openclaw-bot
+BOT_PASSWORD="$(head -c 32 /dev/urandom | base64 | tr -d '\n=+/')"
+
+python -m synapse._scripts.register_new_matrix_user \
+  -c /data/homeserver.yaml \
+  -u "${BOT_USERNAME}" \
+  -p "${BOT_PASSWORD}" \
+  --no-admin \
+  "${HOMESERVER_URL}" >&2
+
+curl -fsS -X POST "${HOMESERVER_URL}/_matrix/client/v3/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"type\":\"m.login.password\",\"user\":\"${BOT_USERNAME}\",\"password\":\"${BOT_PASSWORD}\",\"initial_device_display_name\":\"openclaw-bot\"}" \
+| python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+print(json.dumps({'token': r['access_token'], 'user_id': r['user_id'], 'device_id': r.get('device_id', '')}))
+"
+"""
 
 
 # Init script: rendered as the init container's command. Generates
@@ -427,3 +467,144 @@ class MatrixStack(Stack):
             "EfsSelection",
             resources=[backup.BackupResource.from_efs_file_system(filesystem)],
         )
+
+        ###
+        # Bot account bootstrap (Custom Resource -> ECS one-shot task)
+        #
+        # On first deploy, registers `@openclaw-bot:<server_name>`
+        # via Synapse's shared-secret nonce flow and writes the
+        # resulting access token to `matrix/openclaw-bot-token`.
+        # The token persists; the OpenClaw EC2 host's bot service
+        # reads it at startup. Idempotent on the secret value: the
+        # Lambda no-ops if the token is already populated.
+        #
+        # Pre-create the secret manually before first deploy:
+        #   echo '{"token":"pending"}' | bin/aws-write-secret matrix/openclaw-bot-token -
+
+        bot_token_secret = secretsmanager.Secret.from_secret_name_v2(
+            self, "BotTokenSecret", "matrix/openclaw-bot-token"
+        )
+
+        bootstrap_log_group = logs.LogGroup(self, "BootstrapLogGroup")
+        bootstrap_task_defn = ecs.FargateTaskDefinition(
+            self,
+            "BootstrapTaskDefn",
+            cpu=256,
+            memory_limit_mib=512,
+        )
+        bootstrap_task_defn.add_volume(
+            name="data",
+            efs_volume_configuration=ecs.EfsVolumeConfiguration(
+                file_system_id=filesystem.file_system_id,
+                transit_encryption="ENABLED",
+                authorization_config=ecs.AuthorizationConfig(
+                    access_point_id=access_point.access_point_id,
+                    iam="ENABLED",
+                ),
+            ),
+        )
+        filesystem.grant_read(bootstrap_task_defn.task_role)
+        # Bootstrap task uses the same Synapse image (provides
+        # `register_new_matrix_user`); pull-through-cache grant on
+        # the execution role is needed for the image fetch.
+        stack = Stack.of(self)
+        bootstrap_exec_role = bootstrap_task_defn.obtain_execution_role()
+        bootstrap_exec_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["ecr:GetAuthorizationToken"],
+                resources=["*"],
+            )
+        )
+        bootstrap_exec_role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
+                    "ecr:CreateRepository",
+                    "ecr:BatchImportUpstreamImage",
+                ],
+                resources=[
+                    f"arn:aws:ecr:{stack.region}:{stack.account}:repository/{foundation.dockerhub_mirror_namespace}/*"
+                ],
+            )
+        )
+
+        bootstrap_container = bootstrap_task_defn.add_container(
+            "BotBootstrap",
+            image=synapse_image,
+            essential=True,
+            entry_point=["bash", "-c"],
+            command=[_BOOTSTRAP_SCRIPT],
+            environment={"HOMESERVER_URL": f"https://{listener_fqdn}"},
+            logging=ecs.LogDrivers.aws_logs(
+                stream_prefix="matrix-bot-bootstrap",
+                log_group=bootstrap_log_group,
+            ),
+        )
+        bootstrap_container.add_mount_points(
+            ecs.MountPoint(source_volume="data", container_path="/data", read_only=True)
+        )
+        # Re-use the main service's SG so the bootstrap task can
+        # mount EFS (EFS SG already accepts NFS from this SG) and
+        # reach matrix.<public_domain> for the registration HTTP
+        # call (allow_all_outbound on the SG is the default).
+        bootstrap_fn = lambda_python.PythonFunction(
+            self,
+            "BootstrapFn",
+            entry=str(imports.assets.lambda_path("matrix_bot_account")),
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            index="index.py",
+            handler="handler",
+            timeout=Duration.minutes(10),
+            environment={
+                "CLUSTER_ARN": foundation.cluster.cluster_arn,
+                "TASK_DEFINITION_ARN": bootstrap_task_defn.task_definition_arn,
+                "SUBNET_IDS": ",".join(
+                    s.subnet_id for s in foundation.vpc.private_subnets
+                ),
+                "SECURITY_GROUP_IDS": service.security_group.security_group_id,
+                "SECRET_ID": bot_token_secret.secret_name,
+                "CONTAINER_NAME": bootstrap_container.container_name,
+                "LOG_GROUP": bootstrap_log_group.log_group_name,
+                "LOG_STREAM_PREFIX": "matrix-bot-bootstrap",
+            },
+        )
+        bootstrap_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["ecs:RunTask"],
+                resources=[bootstrap_task_defn.task_definition_arn],
+            )
+        )
+        bootstrap_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["ecs:DescribeTasks", "logs:GetLogEvents"],
+                resources=["*"],
+            )
+        )
+        bootstrap_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["iam:PassRole"],
+                resources=[
+                    bootstrap_task_defn.task_role.role_arn,
+                    bootstrap_exec_role.role_arn,
+                ],
+            )
+        )
+        bot_token_secret.grant_read(bootstrap_fn)
+        bot_token_secret.grant_write(bootstrap_fn)
+
+        bootstrap_provider = cr.Provider(
+            self,
+            "BootstrapProvider",
+            on_event_handler=cast(lambda_.IFunction, bootstrap_fn),
+        )
+        bootstrap_resource = CustomResource(
+            self,
+            "BotAccountBootstrap",
+            service_token=bootstrap_provider.service_token,
+            properties={"Trigger": "v1"},
+        )
+        # Synapse must be live before the bootstrap task can hit
+        # `/_synapse/admin/v1/register` and `/_matrix/client/v3/login`.
+        bootstrap_resource.node.add_dependency(service.service)
