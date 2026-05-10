@@ -133,6 +133,39 @@ manual step is the Tailscale SaaS-side registration.
         - Note: the NLB IPs are AWS-managed and can change if the NLB is
           replaced — switch to static EIPs (`subnet_mappings` with
           `AllocationId`) before requesting PTR if you care about stability.
+- Matrix homeserver (`MatrixStack`)
+    - First SSO sign-in to materialize your account. Open
+      `https://matrix.<public_domain>` in a Matrix client (Element web
+      works); start the SSO flow; sign in via Authentik. Your MXID
+      becomes `@<authentik.user.username>:<public_domain>`.
+- Matrix → OpenClaw control bot (`OpenClawStack`)
+    - The `@openclaw-bot:<public_domain>` account is registered
+      automatically by a Custom Resource in MatrixStack and its access
+      token written to Secrets Manager at `matrix/openclaw-bot-token`.
+      The bot service on the OpenClaw EC2 host is enabled but won't
+      start cleanly until you tell it which Matrix room to listen in.
+    - From Element, create a new private room with just yourself,
+      invite `@openclaw-bot:<public_domain>`, and copy the room's
+      Internal ID (Element: room Settings → Advanced → "Internal room
+      ID"; format: `!xxxx:<public_domain>`).
+    - Bind the bot to that room:
+      ```sh
+      bin/matrix-bot-bind-room '!xxxx:<public_domain>'
+      ```
+      The script writes the ID to SSM Parameter Store at
+      `/openclaw-matrix-bot/control-room-id`, restarts the bot's user
+      systemd unit on the OpenClaw instance, and tails the bot's
+      journal so you can see it accept the pending invite.
+    - From Element, verify the bot's device once via emoji comparison
+      (right-click the bot's avatar → Verify). The cross-signing
+      state lives on EFS, so subsequent restarts trust the existing
+      identity without re-verification.
+    - Test by sending a message in the control room. The bot forwards
+      the message body to the OpenClaw loopback gateway and replies
+      in-thread with the response. If you see `gateway HTTP 4xx/5xx`
+      replies, the gateway HTTP shape in
+      [`assets/openclaw_bot/src/openclaw.ts`](./assets/openclaw_bot/src/openclaw.ts)
+      may need adjusting for your `openclaw` version's API.
 
 ## Operations
 
@@ -636,3 +669,4 @@ DAG. But they can never declare a cyclical dependency.
     - Get rid of the Imports types and just use kwargs
     - Be specific about which properties we want from foundation and data exports
     - EFS and RDS backups
+    - host element service
