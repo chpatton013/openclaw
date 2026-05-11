@@ -431,6 +431,39 @@ class MatrixStack(Stack):
         )
 
         ###
+        # Admin SQL runner Lambda. One-off ops against the matrix DB
+        # as the master user: recover a stale access token, clear
+        # ghost e2e_* rows, deactivate orphan accounts. Invoked
+        # manually via `aws lambda invoke` with a queries[] payload.
+
+        matrix_admin_fn = lambda_python.PythonFunction(
+            self,
+            "MatrixAdminFn",
+            entry=str(imports.assets.lambda_path("matrix_admin")),
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            index="index.py",
+            handler="handler",
+            timeout=Duration.minutes(2),
+            vpc=foundation.vpc,
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ),
+            environment={
+                "DB_HOST": data.database.instance.db_instance_endpoint_address,
+                "DB_PORT": str(data.database.port),
+                "DB_NAME": cfg.db.name,
+                "MASTER_SECRET_ARN": data.master_secret.secret_arn,
+            },
+        )
+        data.master_secret.grant_read(matrix_admin_fn)
+        data.database.grant_connect(
+            self,
+            "MatrixAdminDbIngress",
+            peer=matrix_admin_fn,
+            description="Matrix admin Lambda to DB",
+        )
+
+        ###
         # Backups (signing key + media + registration secret all
         # live on EFS; Postgres covered by RDS automated snapshots).
 
