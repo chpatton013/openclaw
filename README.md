@@ -139,20 +139,33 @@ manual step is the Tailscale SaaS-side registration.
       works); start the SSO flow; sign in via Authentik. Your MXID
       becomes `@<authentik.user.username>:<public_domain>`.
 - Matrix → OpenClaw control bot (`OpenClawStack`)
-    - The `@openclaw-bot:<public_domain>` account is registered
-      automatically by a Custom Resource in MatrixStack and its
-      access token written to Secrets Manager at
-      `matrix/openclaw-bot-token`. On its first start, when the
+    - The bot account (currently `@openclaw-bot-3:<public_domain>`;
+      the suffix tracks the bootstrap CR's `BOT_USERNAME` constant
+      in `infra/stacks/matrix_stack.py`) is registered automatically
+      by a Custom Resource in MatrixStack and its access token
+      written to Secrets Manager at `matrix/openclaw-bot-token`. On
+      its first start, when the
       `/openclaw-matrix-bot/control-room-id` SSM parameter is unset,
       the bot creates an encrypted DM, invites
       `@<authentik.user.username>:<public_domain>`, and persists
       the new room ID back to SSM. Subsequent restarts pick up the
       same room from SSM.
-    - In Element, accept the invite from `@openclaw-bot`.
-    - Verify the bot's device once via emoji comparison (right-click
-      the bot's avatar → Verify). Cross-signing state lives on EFS,
-      so subsequent restarts trust the existing identity without
-      re-verification.
+    - In Element, accept the invite from the bot.
+    - **Verify the bot** so Element shows it as a fully trusted
+      user. matrix-bot-sdk's bundled rust-crypto adapter doesn't
+      implement the SAS dance, so Element's interactive "Verify
+      user" hangs against the bot. Instead, run the side-channel
+      CLI once:
+      ```sh
+      bin/matrix-bot-verify '@openclaw-bot-3:<public_domain>'
+      ```
+      It prompts for your Element access token (Settings > Help &
+      About > Advanced > "Access Token") and your Element recovery
+      key (the base58 string Element gave you when you set up
+      Secure Backup). It decrypts your `user_signing_private_key`
+      out of Synapse's 4S secret storage, signs the bot's master
+      cross-signing key with it, and posts the signature back. After
+      reloading Element, the bot shows as a fully verified user.
     - Test by sending a message in the control room. The bot
       forwards the body to the OpenClaw loopback gateway and replies
       in-thread. If you see `gateway HTTP 4xx/5xx` replies, the

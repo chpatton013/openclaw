@@ -231,8 +231,12 @@ def main() -> int:
     )
     encrypted_entry = encrypted_secret["encrypted"][default_key_id]
     plaintext = decrypt_secret(raw_key, "m.cross_signing.user_signing", encrypted_entry)
-    # The secret content is a base64-encoded 32-byte ed25519 seed.
-    user_signing_seed = base64.b64decode(plaintext)
+    # The secret content is the unpadded base64 of the 32-byte
+    # ed25519 seed (Matrix stores cross-signing private keys this
+    # way). Pad to a multiple of 4 chars before decoding.
+    encoded = plaintext.decode("ascii").strip()
+    padded = encoded + "=" * (-len(encoded) % 4)
+    user_signing_seed = base64.b64decode(padded)
     if len(user_signing_seed) != 32:
         raise SystemExit(
             f"recovered user_signing seed has wrong length {len(user_signing_seed)} (expected 32)"
