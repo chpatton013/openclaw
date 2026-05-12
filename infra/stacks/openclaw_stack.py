@@ -54,6 +54,12 @@ HOMEBREW_INSTALLER_URI = (
     "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 )
 PNPM_INSTALLER_URI = "https://get.pnpm.io/install.sh"
+# Pin pnpm. v11 changed install behavior such that
+# `@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js` (which we
+# run by hand after `pnpm install --ignore-scripts`) can no longer
+# resolve its `https-proxy-agent` transitive dep, breaking user-data
+# build on every fresh instance.
+PNPM_VERSION = "10.18.3"
 BUILD_DEPENDENCIES = [
     "build-essential",
     "curl",
@@ -267,7 +273,7 @@ class OpenClawStack(Stack):
             ),
             "chmod 0644 /etc/profile.d/homebrew.sh",
             # Install pnpm for the ubuntu user from the official installer.
-            f"curl -fsSL {PNPM_INSTALLER_URI} | sudo -iu ubuntu /bin/bash",
+            f"curl -fsSL {PNPM_INSTALLER_URI} | sudo -iu ubuntu env PNPM_VERSION={PNPM_VERSION} /bin/bash",
             # Configure openclaw onboarding.
             # NOTE: We both use `sudo -i` and set XDG_RUNTIME_DIR to allow
             # systemctl to enable user services without a reboot or login cycle.
