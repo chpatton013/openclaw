@@ -363,7 +363,6 @@ class OpenClawStack(Stack):
                     f"Environment=HOMESERVER_URL={imports.matrix_homeserver_url}",
                     f"Environment=ALLOWED_SENDER={imports.allowed_sender}",
                     f"Environment=MATRIX_BOT_DATA_DIR={MATRIX_BOT_DIR!s}",
-                    "Environment=OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789",
                     "Environment=OPENCLAW_GATEWAY_TOKEN_FILE=%t/openclaw-matrix-bot/gateway-token",
                     "Environment=BOT_ACCESS_TOKEN_FILE=%t/openclaw-matrix-bot/access-token",
                     f"Environment=BOT_TOKEN_SECRET_ID={MATRIX_BOT_TOKEN_SECRET}",
