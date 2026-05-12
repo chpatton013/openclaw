@@ -375,8 +375,8 @@ desired_count = 1
 min_healthy_percent = 100
 
 [<name>.smtp]
-host = "smtp.chiiiirs.com"
-from_email_address = "<name>@chiiiirs.com"
+host = "smtp.example.com"
+from_email_address = "<name>@example.com"
 ```
 
 Keep `desired_count = 1` and `min_healthy_percent = 100` for a single-task

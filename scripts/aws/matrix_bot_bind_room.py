@@ -65,7 +65,7 @@ def main() -> int:
     )
     parser.add_argument(
         "room_id",
-        help="Matrix room ID, e.g. '!abc:chiiiirs.com'",
+        help="Matrix room ID, e.g. '!abc:example.com'",
     )
     args = parser.parse_args()
 

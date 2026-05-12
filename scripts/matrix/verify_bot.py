@@ -164,11 +164,11 @@ def main() -> int:
     )
     parser.add_argument(
         "bot_user_id",
-        help="The bot's MXID, e.g. @openclaw-bot:chiiiirs.com",
+        help="The bot's MXID, e.g. @openclaw-bot:example.com",
     )
     parser.add_argument(
         "--homeserver-url",
-        default="https://matrix.chiiiirs.com",
+        default="https://matrix.example.com",
         help="Matrix homeserver base URL",
     )
     parser.add_argument(

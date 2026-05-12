@@ -31,7 +31,7 @@ class SiteImports:
     # serve a static landing page from S3 by default while preserving
     # WebFinger discovery for Tailscale OIDC.
     webfinger_api_domain: str
-    # Matrix homeserver FQDN (e.g. "matrix.chiiiirs.com"). Embedded in
+    # Matrix homeserver FQDN (e.g. "matrix.example.com"). Embedded in
     # `/.well-known/matrix/{server,client}` JSON served from the apex
     # so federating servers and Matrix clients can discover the
     # homeserver without us running it directly at the apex.

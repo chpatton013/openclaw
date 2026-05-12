@@ -39,8 +39,8 @@ SYNAPSE_HTTP_PORT = 8008
 SYNAPSE_UID = "991"
 SYNAPSE_GID = "991"
 
-# Matrix `server_name` is the apex (e.g. chiiiirs.com), so MXIDs
-# look like `@chris:chiiiirs.com`. The actual Synapse listener runs
+# Matrix `server_name` is the apex (e.g. example.com), so MXIDs
+# look like `@yourname:example.com`. The actual Synapse listener runs
 # at matrix.<public_domain>; federating peers find it via the
 # `.well-known/matrix/server` JSON served from the apex by SiteStack.
 
