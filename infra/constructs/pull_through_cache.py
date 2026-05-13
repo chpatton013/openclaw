@@ -32,13 +32,21 @@ class PullThroughCacheRule(Construct):
         self.secret = secretsmanager.Secret.from_secret_name_v2(
             self, "CredentialSecret", secret_name
         )
-        ecr.CfnPullThroughCacheRule(
+        rule = ecr.CfnPullThroughCacheRule(
             self,
             "Rule",
             ecr_repository_prefix=repository_prefix,
             credential_arn=self.secret.secret_arn,
             **kwargs,
         )
+        # ECR pull-through rules are keyed by `ecr_repository_prefix`
+        # (a global account-region name), not by CFN logical id, so a
+        # CFN logical-id change can't do the usual CREATE-then-DELETE
+        # rename: the CREATE collides with the still-extant old rule.
+        # Pin the underlying L1 resource's logical id to this
+        # construct's own id (the pre-refactor name) so the CFN
+        # template stays stable.
+        rule.override_logical_id(construct_id)
         self.mirror_namespace = repository_prefix
         self.mirror_base = (
             f"{Aws.ACCOUNT_ID}.dkr.ecr.{Aws.REGION}.amazonaws.com/"
