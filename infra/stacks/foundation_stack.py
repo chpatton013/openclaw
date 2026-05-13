@@ -1,18 +1,16 @@
 from dataclasses import dataclass
 
 from aws_cdk import (
-    Aws,
     RemovalPolicy,
     Stack,
     aws_backup as backup,
     aws_ec2 as ec2,
-    aws_ecr as ecr,
     aws_ecs as ecs,
     aws_route53 as route53,
-    aws_secretsmanager as secretsmanager,
 )
 from constructs import Construct
 
+from ..constructs.pull_through_cache import PullThroughCacheRule
 from ..models.foundation_config import FoundationConfig
 from ..models.foundation_exports import FoundationExports
 
@@ -77,36 +75,21 @@ class FoundationStack(Stack):
 
         cluster = ecs.Cluster(self, "Cluster", vpc=vpc)
 
-        ghcr_credential_secret = secretsmanager.Secret.from_secret_name_v2(
-            self, "GhcrCredentialSecret", GHCR_CREDENTIAL_SECRET_NAME
-        )
-        ecr.CfnPullThroughCacheRule(
+        ghcr = PullThroughCacheRule(
             self,
             "GhcrPullThroughCacheRule",
-            ecr_repository_prefix=GHCR_MIRROR_NAMESPACE,
+            secret_name=GHCR_CREDENTIAL_SECRET_NAME,
+            repository_prefix=GHCR_MIRROR_NAMESPACE,
             upstream_registry_url="ghcr.io",
             upstream_registry="github-container-registry",
-            credential_arn=ghcr_credential_secret.secret_arn,
         )
-        ghcr_mirror_base = (
-            f"{Aws.ACCOUNT_ID}.dkr.ecr.{Aws.REGION}.amazonaws.com/"
-            f"{GHCR_MIRROR_NAMESPACE}"
-        )
-
-        dockerhub_credential_secret = secretsmanager.Secret.from_secret_name_v2(
-            self, "DockerHubCredentialSecret", DOCKERHUB_CREDENTIAL_SECRET_NAME
-        )
-        ecr.CfnPullThroughCacheRule(
+        dockerhub = PullThroughCacheRule(
             self,
             "DockerHubPullThroughCacheRule",
-            ecr_repository_prefix=DOCKERHUB_MIRROR_NAMESPACE,
+            secret_name=DOCKERHUB_CREDENTIAL_SECRET_NAME,
+            repository_prefix=DOCKERHUB_MIRROR_NAMESPACE,
             upstream_registry_url="registry-1.docker.io",
             upstream_registry="docker-hub",
-            credential_arn=dockerhub_credential_secret.secret_arn,
-        )
-        dockerhub_mirror_base = (
-            f"{Aws.ACCOUNT_ID}.dkr.ecr.{Aws.REGION}.amazonaws.com/"
-            f"{DOCKERHUB_MIRROR_NAMESPACE}"
         )
 
         backup_vault = backup.BackupVault(
@@ -123,9 +106,9 @@ class FoundationStack(Stack):
             private_zone=private_zone,
             vpc=vpc,
             cluster=cluster,
-            ghcr_mirror_base=ghcr_mirror_base,
-            ghcr_mirror_namespace=GHCR_MIRROR_NAMESPACE,
-            dockerhub_mirror_base=dockerhub_mirror_base,
-            dockerhub_mirror_namespace=DOCKERHUB_MIRROR_NAMESPACE,
+            ghcr_mirror_base=ghcr.mirror_base,
+            ghcr_mirror_namespace=ghcr.mirror_namespace,
+            dockerhub_mirror_base=dockerhub.mirror_base,
+            dockerhub_mirror_namespace=dockerhub.mirror_namespace,
             backup_vault=backup_vault,
         )
