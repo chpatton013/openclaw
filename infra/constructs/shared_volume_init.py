@@ -17,7 +17,9 @@ class SharedVolumeInit(Construct):
     step.
 
     Caller is responsible for granting the task role any permissions the
-    init command needs (e.g. `secret.grant_read(service.task_defn.task_role)`).
+    init command needs (e.g. `secret.grant_read(service.task_defn.task_role)`)
+    AND for including its own `set -eu`-style shell options at the top of
+    `commands`.
     """
 
     def __init__(
@@ -28,7 +30,7 @@ class SharedVolumeInit(Construct):
         service: PrivateEgressFargateService,
         volume_name: str,
         mount_path: str,
-        shell_commands: Sequence[str],
+        commands: Sequence[str],
         environment: dict[str, str] | None = None,
         stream_prefix: str,
         main_container_read_only: bool = True,
@@ -51,7 +53,7 @@ class SharedVolumeInit(Construct):
             ),
             essential=False,
             entry_point=["sh", "-c"],
-            command=["; ".join(["set -eu", *shell_commands])],
+            command=["; ".join(commands)],
             environment=dict(environment) if environment else {},
             logging=ecs.LogDrivers.aws_logs(
                 stream_prefix=stream_prefix,

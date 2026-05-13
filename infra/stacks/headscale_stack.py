@@ -189,22 +189,12 @@ class HeadscaleStack(Stack):
             service=headscale_service,
             volume_name=NOISE_VOLUME,
             mount_path=NOISE_MOUNT_PATH,
-            shell_commands=[
-                f'touch "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
-                f'chmod 600 "{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
-                " | ".join(
-                    [
-                        f'aws secretsmanager get-secret-value --secret-id "${{NOISE_SECRET_NAME}}" --query SecretString --output text',
-                        "jq -r .secret",
-                        "base64 -d",
-                        "od -An -v -t x1",
-                        'tr -d "[:space:]"',
-                        f'awk \'{{print "privkey:" $0}}\' >"{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}"',
-                    ]
-                ),
-                f'printf "noise:\\n  private_key_path: {NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}\\n" >"{NOISE_MOUNT_PATH}/{CONFIG_FILENAME}"',
-            ],
-            environment={"NOISE_SECRET_NAME": "headscale/noise-private-key"},
+            commands=[imports.assets.read_text("headscale", "noise-init.sh")],
+            environment={
+                "NOISE_SECRET_NAME": "headscale/noise-private-key",
+                "NOISE_KEY_PATH": f"{NOISE_MOUNT_PATH}/{NOISE_KEY_FILENAME}",
+                "NOISE_CONFIG_PATH": f"{NOISE_MOUNT_PATH}/{CONFIG_FILENAME}",
+            },
             stream_prefix="headscale-noise-init",
             main_container_read_only=False,
         )
@@ -305,7 +295,8 @@ class HeadscaleStack(Stack):
             service=headplane_service,
             volume_name=HEADPLANE_CONFIG_VOLUME,
             mount_path=HEADPLANE_CONFIG_MOUNT_PATH,
-            shell_commands=[
+            commands=[
+                "set -eu",
                 _fetch_cookie,
                 _fetch_apikey,
                 _fetch_oidc,

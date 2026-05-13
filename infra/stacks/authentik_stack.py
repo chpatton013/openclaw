@@ -353,7 +353,8 @@ class AuthentikStack(Stack):
                 service=svc,
                 volume_name=BLUEPRINTS_VOLUME,
                 mount_path=BLUEPRINTS_MOUNT_PATH,
-                shell_commands=[
+                commands=[
+                    "set -eu",
                     f'aws s3 sync "s3://${{BLUEPRINTS_BUCKET}}/" "{BLUEPRINTS_MOUNT_PATH}/"',
                 ],
                 environment={"BLUEPRINTS_BUCKET": blueprints_bucket.bucket_name},
