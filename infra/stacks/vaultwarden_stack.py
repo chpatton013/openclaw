@@ -64,6 +64,8 @@ class VaultwardenStack(Stack):
         ###
         # EFS for /data
 
+        # AGENT TODO: Use the construct described in MatrixStack to dedupe EFS
+        # definition
         efs_sg = ec2.SecurityGroup(
             self, "EfsSecurityGroup", vpc=foundation.vpc, allow_all_outbound=True
         )
@@ -134,14 +136,9 @@ class VaultwardenStack(Stack):
 
         # Vaultwarden needs DATABASE_URL as a single string. ECS secrets cannot
         # be interpolated into other env vars, so assemble it in a shell wrapper
-        # before exec'ing the image's default entrypoint.
-        entry_command = [
-            "sh",
-            "-c",
-            'export DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require"; '
-            "exec /start.sh",
-        ]
-
+        # before exec'ing the image's default entrypoint. Split into
+        # entry_point/command so the shell is the ENTRYPOINT and the script
+        # is its CMD argument, matching Docker convention.
         service = PrivateEgressFargateService(
             self,
             "Service",
@@ -160,7 +157,11 @@ class VaultwardenStack(Stack):
                         host_port=VAULTWARDEN_HTTP_PORT,
                     ),
                 ],
-                command=entry_command,
+                entry_point=["sh", "-c"],
+                command=[
+                    'export DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require"; '
+                    "exec /start.sh"
+                ],
                 environment=environment,
                 secrets=secrets,
             ),
