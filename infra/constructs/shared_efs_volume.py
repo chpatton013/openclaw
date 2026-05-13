@@ -1,11 +1,9 @@
 """An EFS file system + its security group + N access points, packaged
-as a single construct so per-stack EFS mounts don't have to repeat the
-8-line `SecurityGroup` + `FileSystem` + `add_access_point` recipe.
+as a single construct.
 
-Defaults match the Matrix reference pattern (encrypted at rest, RETAIN
-on removal, general-purpose performance, bursting throughput, private
-subnets with egress, SG outbound open). Anything else can be overridden
-via `**kwargs`, which are forwarded to `efs.FileSystem`.
+By default: encrypted at rest, RETAIN on removal, general-purpose performance,
+bursting throughput, private subnets with egress, SG outbound open. Anything
+else can be overridden via `**kwargs`, which are forwarded to `efs.FileSystem`.
 """
 
 from collections.abc import Sequence

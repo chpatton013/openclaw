@@ -67,8 +67,8 @@ class TestSynth(unittest.TestCase):
     def test_mail_stack(self) -> None:
         self.assertIn("Resources", self._template("MailStack"))
 
-    def test_site_stack(self) -> None:
-        self.assertIn("Resources", self._template("SiteStack"))
+    def test_apex_edge_stack(self) -> None:
+        self.assertIn("Resources", self._template("ApexEdgeStack"))
 
     def test_webmail_stack(self) -> None:
         self.assertIn("Resources", self._template("WebmailStack"))

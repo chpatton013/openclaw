@@ -45,7 +45,7 @@ SYNAPSE_GID = "991"
 # Matrix `server_name` is the apex (e.g. example.com), so MXIDs
 # look like `@yourname:example.com`. The actual Synapse listener runs
 # at matrix.<public_domain>; federating peers find it via the
-# `.well-known/matrix/server` JSON served from the apex by SiteStack.
+# `.well-known/matrix/server` JSON served from the apex by ApexEdgeStack.
 
 
 @dataclass(frozen=True)
@@ -72,15 +72,12 @@ class MatrixStack(Stack):
         foundation = imports.foundation
         data = imports.data
 
-        # Init + bot-bootstrap scripts live under assets/matrix/ so
-        # shellcheck/shfmt + future editors can inspect them as real
-        # files instead of as r-strings inside this Python module.
         init_script = imports.assets.read_text("matrix", "init.sh")
         bootstrap_script = imports.assets.read_text("matrix", "bootstrap.sh")
 
         # Matrix `server_name` is the apex; the listener lives at
-        # matrix.<public_domain>. .well-known delegation in SiteStack
-        # tells federating peers and clients to look here.
+        # matrix.<public_domain>. .well-known delegation in
+        # ApexEdgeStack tells federating peers and clients to look here.
         server_name = foundation.public_domain
         listener_fqdn = f"{cfg.subdomain}.{foundation.public_domain}"
         oidc_issuer = f"{imports.authentik_issuer_base}/matrix/"

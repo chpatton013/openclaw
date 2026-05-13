@@ -3,7 +3,7 @@ from typing import Any, Self
 
 
 @dataclass(frozen=True)
-class SiteConfig:
+class ApexEdgeConfig:
     www_subdomain: str | None
 
     @classmethod

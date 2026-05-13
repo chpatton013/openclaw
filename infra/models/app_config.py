@@ -3,13 +3,13 @@ import tomllib
 from dataclasses import dataclass
 from typing import Any, Self
 
+from .apex_edge_config import ApexEdgeConfig
 from .authentik_config import AuthentikConfig
 from .data_config import DataConfig
 from .foundation_config import FoundationConfig
 from .headscale_config import HeadscaleConfig
 from .mail_config import MailConfig
 from .matrix_config import MatrixConfig
-from .site_config import SiteConfig
 from .vaultwarden_config import VaultwardenConfig
 from .webfinger_config import WebFingerConfig
 from .webmail_config import WebmailConfig
@@ -25,7 +25,7 @@ class AppConfig:
     vaultwarden: VaultwardenConfig
     mail: MailConfig
     matrix: MatrixConfig
-    site: SiteConfig
+    apex_edge: ApexEdgeConfig
     webmail: WebmailConfig
 
     @classmethod
@@ -39,7 +39,7 @@ class AppConfig:
             vaultwarden=VaultwardenConfig.load(data["vaultwarden"]),
             mail=MailConfig.load(data["mail"]),
             matrix=MatrixConfig.load(data["matrix"]),
-            site=SiteConfig.load(data["site"]),
+            apex_edge=ApexEdgeConfig.load(data["apex_edge"]),
             webmail=WebmailConfig.load(data["webmail"]),
         )
 

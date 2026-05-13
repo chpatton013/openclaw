@@ -295,6 +295,7 @@ class HeadscaleStack(Stack):
             service=headplane_service,
             volume_name=HEADPLANE_CONFIG_VOLUME,
             mount_path=HEADPLANE_CONFIG_MOUNT_PATH,
+            # AGENT TODO: move this to a script in assets/
             commands=[
                 "set -eu",
                 _fetch_cookie,

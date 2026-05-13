@@ -109,7 +109,7 @@ secret_name = "mail/ses-relay"
 # as f"email-smtp.{Aws.REGION}.amazonaws.com" so it tracks the deploy
 # region without manual config drift.
 
-[site]
+[apex_edge]
 # Static landing page at chiiiirs.com. CloudFront forwards
 # /.well-known/webfinger* to WebFingerStack's API so OIDC discovery
 # keeps working at the apex; everything else is served from S3.

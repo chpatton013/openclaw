@@ -27,9 +27,10 @@ class WebFingerImports:
 @dataclass(frozen=True)
 class WebFingerExports:
     # Regional invoke domain for the HTTP API (default stage, no path
-    # prefix). SiteStack uses this as a CloudFront origin and routes
-    # `/.well-known/webfinger*` to it; the apex hostname itself is
-    # owned by SiteStack's CloudFront distribution.
+    # prefix). app_builder.py wraps this in an `ApexBehavior` so
+    # ApexEdgeStack's CloudFront distribution routes
+    # `/.well-known/webfinger*` here. WebFinger itself stays
+    # unaware that its API is fronted by the apex distribution.
     api_invoke_domain: str
 
 

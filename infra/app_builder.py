@@ -1,7 +1,18 @@
 import aws_cdk as cdk
+from aws_cdk import (
+    aws_cloudfront as cloudfront,
+    aws_cloudfront_origins as origins,
+    aws_s3_deployment as s3deploy,
+)
 
 from .models.app_config import AppConfig
 from .models.asset_loader import AssetLoader
+from .stacks.apex_edge_stack import (
+    ApexBehavior,
+    ApexContentDeployment,
+    ApexEdgeImports,
+    ApexEdgeStack,
+)
 from .stacks.authentik_stack import AuthentikImports, AuthentikStack
 from .stacks.data_stack import DataImports, DataStack
 from .stacks.foundation_stack import FoundationImports, FoundationStack
@@ -9,7 +20,6 @@ from .stacks.headscale_stack import HeadscaleImports, HeadscaleStack
 from .stacks.mail_stack import MailImports, MailStack
 from .stacks.matrix_stack import MatrixImports, MatrixStack
 from .stacks.openclaw_stack import OpenClawImports, OpenClawStack
-from .stacks.site_stack import SiteImports, SiteStack
 from .stacks.vaultwarden_stack import VaultwardenImports, VaultwardenStack
 from .stacks.webfinger_stack import WebFingerImports, WebFingerStack
 from .stacks.webmail_stack import WebmailImports, WebmailStack
@@ -40,10 +50,11 @@ def build_app(
     matrix_fqdn = f"{cfg.matrix.subdomain}.{cfg.foundation.public_domain}"
     matrix_redirect_uri = f"https://{matrix_fqdn}/_synapse/client/oidc/callback"
 
-    # CloudFront / ACM-for-CloudFront only live in us-east-1, so SiteStack
-    # is pinned there. Everything else stays in the app's primary region;
-    # cross-stack references between regions are explicitly enabled.
-    site_env = cdk.Environment(account=env.account, region="us-east-1")
+    # CloudFront / ACM-for-CloudFront only live in us-east-1, so
+    # ApexEdgeStack is pinned there. Everything else stays in the
+    # app's primary region; cross-stack references between regions
+    # are explicitly enabled.
+    apex_edge_env = cdk.Environment(account=env.account, region="us-east-1")
 
     foundation = FoundationStack(
         app,
@@ -159,17 +170,57 @@ def build_app(
         ),
         env=env,
     )
-    SiteStack(
+    ApexEdgeStack(
         app,
-        "SiteStack",
-        imports=SiteImports(
-            cfg=cfg.site,
+        "ApexEdgeStack",
+        imports=ApexEdgeImports(
+            cfg=cfg.apex_edge,
             foundation=foundation,
             assets=assets,
-            webfinger_api_domain=webfinger.api_invoke_domain,
-            matrix_fqdn=matrix_fqdn,
+            behaviors=[
+                # WebFinger responses are dynamic JSON keyed on a
+                # query parameter; bypass the cache and forward
+                # query strings.
+                ApexBehavior(
+                    path_pattern="/.well-known/webfinger*",
+                    options=cloudfront.BehaviorOptions(
+                        origin=origins.HttpOrigin(
+                            webfinger.api_invoke_domain,
+                            protocol_policy=cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+                        ),
+                        allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+                        viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                        cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                        origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+                    ),
+                ),
+            ],
+            content_deployments=[
+                # Matrix federation/client discovery served from the
+                # apex. Synapse lives at matrix.<public_domain>;
+                # these JSON files tell Matrix federation peers and
+                # clients to look there. `prune=False` avoids
+                # fighting the apex site-content deployment over
+                # object retention.
+                ApexContentDeployment(
+                    construct_id="MatrixWellKnown",
+                    sources=[
+                        s3deploy.Source.json_data(
+                            ".well-known/matrix/server",
+                            {"m.server": f"{matrix_fqdn}:443"},
+                        ),
+                        s3deploy.Source.json_data(
+                            ".well-known/matrix/client",
+                            {"m.homeserver": {"base_url": f"https://{matrix_fqdn}"}},
+                        ),
+                    ],
+                    content_type="application/json",
+                    distribution_paths=["/.well-known/matrix/*"],
+                    prune=False,
+                ),
+            ],
         ),
-        env=site_env,
+        env=apex_edge_env,
         cross_region_references=True,
     )
     OpenClawStack(

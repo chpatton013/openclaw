@@ -15,36 +15,74 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+from ..models.apex_edge_config import ApexEdgeConfig
 from ..models.asset_loader import AssetLoader
 from ..models.foundation_exports import FoundationExports
-from ..models.site_config import SiteConfig
 
 
 @dataclass(frozen=True)
-class SiteImports:
-    cfg: SiteConfig
+class ApexBehavior:
+    """One additional CloudFront behavior on the apex distribution.
+
+    Path pattern is matched against the request path; matching
+    requests are routed to the behavior's origin instead of the
+    default S3 origin. Caller supplies a fully-formed BehaviorOptions
+    so it can set cache policies, origin request policies, methods,
+    etc. without this construct having an opinion.
+    """
+
+    path_pattern: str
+    options: cloudfront.BehaviorOptions
+
+
+@dataclass(frozen=True)
+class ApexContentDeployment:
+    """A static-content deployment onto the apex S3 bucket.
+
+    Each entry produces one `s3deploy.BucketDeployment` resource.
+    Mirrors the BucketDeployment kwargs (sources, content_type,
+    distribution_paths, prune). The `construct_id` is the CDK id used
+    when the deployment is added to the stack.
+    """
+
+    construct_id: str
+    sources: list[s3deploy.ISource]
+    content_type: str | None = None
+    distribution_paths: list[str] | None = None
+    prune: bool = True
+
+
+@dataclass(frozen=True)
+class ApexEdgeImports:
+    cfg: ApexEdgeConfig
     foundation: FoundationExports
     assets: AssetLoader
-    # WebFinger's regional API invoke domain
-    # (e.g. "abc.execute-api.us-west-2.amazonaws.com"). CloudFront
-    # forwards `/.well-known/webfinger*` here so the apex hostname can
-    # serve a static landing page from S3 by default while preserving
-    # WebFinger discovery for Tailscale OIDC.
-    webfinger_api_domain: str
-    # Matrix homeserver FQDN (e.g. "matrix.example.com"). Embedded in
-    # `/.well-known/matrix/{server,client}` JSON served from the apex
-    # so federating servers and Matrix clients can discover the
-    # homeserver without us running it directly at the apex.
-    matrix_fqdn: str
+    # CloudFront behaviors contributed by other stacks. Each one
+    # routes a path pattern on the apex hostname to a non-default
+    # origin (e.g. WebFinger's API Gateway).
+    behaviors: list[ApexBehavior]
+    # Static content deployed into the apex S3 bucket by other
+    # stacks (e.g. Matrix's `.well-known/matrix/{server,client}`
+    # discovery JSON).
+    content_deployments: list[ApexContentDeployment]
 
 
-class SiteStack(Stack):
+class ApexEdgeStack(Stack):
+    """The apex CloudFront distribution + ACM cert + origin S3 bucket.
+
+    All apex routing lives here, but the knowledge of WHAT is being
+    routed lives in `app_builder.py`, which assembles the `behaviors`
+    and `content_deployments` lists from each contributing stack's
+    exports. This stack does not know about WebFinger, Matrix, or any
+    other specific service by name.
+    """
+
     def __init__(
         self,
         scope: Construct,
         construct_id: str,
         *,
-        imports: SiteImports,
+        imports: ApexEdgeImports,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -58,7 +96,7 @@ class SiteStack(Stack):
         # Private S3 bucket; CloudFront reads via Origin Access Control.
         bucket = s3.Bucket(
             self,
-            "SiteBucket",
+            "ApexBucket",
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             encryption=s3.BucketEncryption.S3_MANAGED,
             removal_policy=RemovalPolicy.DESTROY,
@@ -73,11 +111,6 @@ class SiteStack(Stack):
             validation=acm.CertificateValidation.from_dns(foundation.public_zone),
         )
 
-        webfinger_origin = origins.HttpOrigin(
-            imports.webfinger_api_domain,
-            protocol_policy=cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
-        )
-
         distribution = cloudfront.Distribution(
             self,
             "Cdn",
@@ -85,17 +118,7 @@ class SiteStack(Stack):
                 origin=origins.S3BucketOrigin.with_origin_access_control(bucket),
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
             ),
-            additional_behaviors={
-                # WebFinger responses are dynamic JSON keyed on a query
-                # parameter; bypass the cache and forward query strings.
-                "/.well-known/webfinger*": cloudfront.BehaviorOptions(
-                    origin=webfinger_origin,
-                    allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
-                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
-                ),
-            },
+            additional_behaviors={b.path_pattern: b.options for b in imports.behaviors},
             domain_names=names,
             certificate=cert,
             default_root_object="index.html",
@@ -115,6 +138,7 @@ class SiteStack(Stack):
             ],
         )
 
+        # Default site content (the apex's static landing page).
         s3deploy.BucketDeployment(
             self,
             "SiteContent",
@@ -124,32 +148,22 @@ class SiteStack(Stack):
             distribution_paths=["/*"],
         )
 
-        # Matrix federation/client discovery served from the apex.
-        # Synapse lives at matrix.<public_domain>; these JSON files
-        # tell Matrix federation peers and clients to look there.
-        # Path keys deliberately have no `.json` extension (Matrix
-        # spec requires `.well-known/matrix/server` exactly), so we
-        # set Content-Type explicitly. `prune=False` avoids fighting
-        # the main `SiteContent` deployment over object retention.
-        s3deploy.BucketDeployment(
-            self,
-            "MatrixWellKnown",
-            sources=[
-                s3deploy.Source.json_data(
-                    ".well-known/matrix/server",
-                    {"m.server": f"{imports.matrix_fqdn}:443"},
-                ),
-                s3deploy.Source.json_data(
-                    ".well-known/matrix/client",
-                    {"m.homeserver": {"base_url": f"https://{imports.matrix_fqdn}"}},
-                ),
-            ],
-            destination_bucket=bucket,
-            distribution=distribution,
-            distribution_paths=["/.well-known/matrix/*"],
-            content_type="application/json",
-            prune=False,
-        )
+        # Per-stack content contributions.
+        for entry in imports.content_deployments:
+            kwargs_extra: dict = {}
+            if entry.content_type is not None:
+                kwargs_extra["content_type"] = entry.content_type
+            if entry.distribution_paths is not None:
+                kwargs_extra["distribution_paths"] = entry.distribution_paths
+            s3deploy.BucketDeployment(
+                self,
+                entry.construct_id,
+                sources=entry.sources,
+                destination_bucket=bucket,
+                distribution=distribution,
+                prune=entry.prune,
+                **kwargs_extra,
+            )
 
         target = route53.RecordTarget.from_alias(
             cast(
