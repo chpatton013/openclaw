@@ -27,13 +27,18 @@ export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
 apt-get install -y \
-  awscli \
   certbot \
   python3-certbot-dns-route53 \
   coturn \
   curl \
   jq \
   unzip
+
+# Ubuntu 24.04 dropped the awscli v1 apt package. Install v2 from
+# the official AWS bundle.
+curl -fsSL 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o /tmp/awscliv2.zip
+unzip -oq /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install --update
 
 # Discover the instance's public IPv4. coturn needs the literal
 # EIP for STUN responses; the metadata service is the source of
