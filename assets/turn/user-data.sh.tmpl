@@ -32,6 +32,7 @@ apt-get install -y \
   coturn \
   curl \
   jq \
+  nginx \
   unzip
 
 # Ubuntu 24.04 dropped the awscli v1 apt package. Install v2 from
@@ -131,6 +132,12 @@ render() {
 render /opt/turn-assets/turnserver.conf.tmpl /etc/turnserver.conf
 mkdir -p /etc/livekit
 render /opt/turn-assets/livekit.yaml.tmpl /etc/livekit/livekit.yaml
+# nginx vhost (root-readable; nginx runs as www-data which is
+# also added to tls-readers below for cert access).
+render /opt/turn-assets/nginx-livekit.conf.tmpl /etc/nginx/sites-available/livekit
+ln -sf /etc/nginx/sites-available/livekit /etc/nginx/sites-enabled/livekit
+rm -f /etc/nginx/sites-enabled/default
+usermod -a -G tls-readers www-data
 
 # Enable coturn (Ubuntu's package ships a disabled-by-default
 # systemd unit guarded by /etc/default/coturn).
@@ -162,6 +169,8 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 systemctl enable --now livekit-server
+systemctl enable --now nginx
+systemctl reload nginx
 
 # Renewal deploy-hook: re-permission the renewed material and
 # reload both services. certbot's systemd timer (shipped by the
@@ -174,6 +183,7 @@ set -euo pipefail
 chgrp -R tls-readers /etc/letsencrypt/live /etc/letsencrypt/archive
 chmod -R g+rX /etc/letsencrypt/live /etc/letsencrypt/archive
 systemctl reload coturn || systemctl restart coturn
+systemctl reload nginx || systemctl restart nginx
 systemctl restart livekit-server
 EOF
 chmod 0755 /etc/letsencrypt/renewal-hooks/deploy/coturn-livekit.sh

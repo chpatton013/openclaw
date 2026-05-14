@@ -1,0 +1,31 @@
+# nginx reverse proxy that terminates TLS for LiveKit's signaling.
+# Placeholders of the form __KEY__ are substituted on-host.
+# Same multi-SAN cert coturn uses; we just need a vhost for the
+# livekit FQDN so nginx hands off correctly when SNI matches.
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name __LIVEKIT_FQDN__;
+
+    ssl_certificate     __TLS_CERT_PATH__;
+    ssl_certificate_key __TLS_KEY_PATH__;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    location / {
+        proxy_pass         http://127.0.0.1:7880;
+        proxy_http_version 1.1;
+        # WebSocket upgrade pass-through for the signaling channel.
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        "upgrade";
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        # LiveKit clients can hold a WebSocket open for the full
+        # call duration; default 60s is too short.
+        proxy_read_timeout  3600s;
+        proxy_send_timeout  3600s;
+    }
+}

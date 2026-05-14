@@ -192,9 +192,11 @@ class TurnStack(Stack):
             ec2.Port.udp_range(cfg.relay_min_port, cfg.relay_max_port),
             "coturn relay UDP range",
         )
-        # LiveKit signaling + RTC.
+        # LiveKit signaling (nginx terminates TLS on 443 and
+        # forwards to 127.0.0.1:7880; the 7880 port stays
+        # internal). RTC media goes direct.
         sg.add_ingress_rule(
-            ec2.Peer.any_ipv4(), ec2.Port.tcp(7880), "livekit signaling WSS"
+            ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "livekit signaling via nginx"
         )
         sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(7881), "livekit RTC TCP")
         sg.add_ingress_rule(ec2.Peer.any_ipv4(), ec2.Port.udp(7882), "livekit RTC UDP")
@@ -302,7 +304,7 @@ class TurnStack(Stack):
             turn_fqdn=turn_fqdn,
             livekit_fqdn=livekit_fqdn,
             turn_shared_secret=cast(secretsmanager.ISecret, turn_shared_secret),
-            livekit_url=f"wss://{livekit_fqdn}:7880",
+            livekit_url=f"wss://{livekit_fqdn}",
             livekit_api_key_secret=cast(secretsmanager.ISecret, livekit_api_key_secret),
             livekit_api_secret_secret=cast(
                 secretsmanager.ISecret, livekit_api_secret_secret
