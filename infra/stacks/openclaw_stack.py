@@ -170,6 +170,17 @@ class OpenClawStack(Stack):
             ],
         )
         filesystem.grant_read_write(role)
+        # efs-utils' mount path resolves `fs-xxx.efs.<region>` via the
+        # VPC's Amazon-provided DNS resolver; if those records aren't
+        # yet propagated (typical right after mount-target recreation)
+        # it falls back to looking up MT IPs through the EC2 API.
+        # Grant the API read so that fallback succeeds.
+        role.add_to_principal_policy(
+            iam.PolicyStatement(
+                actions=["ec2:DescribeAvailabilityZones"],
+                resources=["*"],
+            )
+        )
 
         # Matrix bot resources the EC2 instance pulls at runtime: the
         # bot's access token from Secrets Manager and the control
