@@ -1,0 +1,27 @@
+{
+  "name": "openclaw-matrix-appservice",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Matrix Application Service that puppets @_openclaw_<agent> ghosts and routes messages through the loopback OpenClaw gateway.",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "matrix-bot-sdk": "^0.8.0",
+    "@matrix-org/matrix-sdk-crypto-nodejs": "^0.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@matrix-org/matrix-sdk-crypto-nodejs"
+    ]
+  }
+}

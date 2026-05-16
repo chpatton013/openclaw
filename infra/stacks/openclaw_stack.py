@@ -1,22 +1,23 @@
 import pathlib
 from dataclasses import dataclass
 
+import aws_cdk as cdk
 from aws_cdk import (
     Aws,
     CfnOutput,
     Duration,
     Stack,
-    Fn,
-    RemovalPolicy,
-    Stack,
     aws_backup as backup,
     aws_ec2 as ec2,
     aws_efs as efs,
+    aws_elasticloadbalancingv2 as elbv2,
+    aws_elasticloadbalancingv2_targets as elbv2_targets,
     aws_iam as iam,
     aws_s3_assets as s3_assets,
 )
 from constructs import Construct
 
+from ..constructs.public_http_alb import PublicHttpAlb
 from ..constructs.shared_efs_volume import EfsAccessPointSpec, SharedEfsVolume
 from ..constructs.standard_backup_plan import StandardBackupPlan
 from ..models.asset_loader import AssetLoader
@@ -28,7 +29,17 @@ class OpenClawImports:
     foundation: FoundationExports
     assets: AssetLoader
     matrix_homeserver_url: str
+    # Synapse server_name (the apex domain, used for the AS user-
+    # namespace regex and ghost MXID construction).
+    matrix_server_name: str
     allowed_sender: str
+    # Public FQDN of the AS endpoint; OpenClawStack provisions the
+    # ALB at this hostname. Synapse already has the URL baked into
+    # its registration YAML (Phase A) and pushes events here.
+    appservice_fqdn: str
+    # Comma-joined agent ids the AS puppets. The AS only responds
+    # for ghost MXIDs whose suffix matches one of these.
+    agent_ids: list[str]
 
 
 EFS_MOUNTPOINT_DIR = pathlib.Path("/data")
@@ -41,6 +52,14 @@ MATRIX_BOT_INSTALL_DIR = pathlib.Path("/opt/openclaw-matrix-bot")
 MATRIX_BOT_RUNTIME_DIR = pathlib.Path("/run/openclaw-matrix-bot")
 MATRIX_BOT_TOKEN_SECRET = "matrix/openclaw-bot-token"
 MATRIX_BOT_CONTROL_ROOM_PARAM = "/openclaw-matrix-bot/control-room-id"
+
+# Matrix appservice (Phase B). Runs alongside the existing
+# matrix-bot during the evaluation period. Secret names are the
+# ones MatrixStack auto-generates in Phase A.
+AS_INSTALL_DIR = pathlib.Path("/opt/openclaw-matrix-appservice")
+AS_PORT = 9000
+APPSERVICE_AS_TOKEN_SECRET = "matrix/openclaw-appservice-as-token"
+APPSERVICE_HS_TOKEN_SECRET = "matrix/openclaw-appservice-hs-token"
 # OpenClaw stores its gateway auth token inside its main state JSON
 # file at `gateway.auth.token` rather than as a standalone file.
 # The bot's prestart helper reads this state file and extracts the
@@ -191,7 +210,9 @@ class OpenClawStack(Stack):
             iam.PolicyStatement(
                 actions=["secretsmanager:GetSecretValue"],
                 resources=[
-                    f"arn:aws:secretsmanager:{Aws.REGION}:{Aws.ACCOUNT_ID}:secret:{MATRIX_BOT_TOKEN_SECRET}-*"
+                    f"arn:aws:secretsmanager:{Aws.REGION}:{Aws.ACCOUNT_ID}:secret:{MATRIX_BOT_TOKEN_SECRET}-*",
+                    f"arn:aws:secretsmanager:{Aws.REGION}:{Aws.ACCOUNT_ID}:secret:{APPSERVICE_AS_TOKEN_SECRET}-*",
+                    f"arn:aws:secretsmanager:{Aws.REGION}:{Aws.ACCOUNT_ID}:secret:{APPSERVICE_HS_TOKEN_SECRET}-*",
                 ],
             )
         )
@@ -263,12 +284,24 @@ class OpenClawStack(Stack):
         # code here to set up the building blocks that can enable this use
         # pattern. Let's brainstorm about what we would need to do to set that
         # up.
+        # IgnoreMode.GIT picks up each asset folder's own .gitignore
+        # so locally-built node_modules / dist don't bloat the upload
+        # and don't ship a stale state pnpm will refuse to overwrite
+        # on the EC2 host without a TTY.
         bot_asset = s3_assets.Asset(
             self,
             "MatrixBotAsset",
             path=str(imports.assets.openclaw_bot_path()),
+            ignore_mode=cdk.IgnoreMode.GIT,
         )
         bot_asset.grant_read(role)
+        as_asset = s3_assets.Asset(
+            self,
+            "MatrixAppserviceAsset",
+            path=str(imports.assets.openclaw_appservice_path()),
+            ignore_mode=cdk.IgnoreMode.GIT,
+        )
+        as_asset.grant_read(role)
         efs_fstab = " ".join(
             [
                 f"{filesystem.file_system_id}:/",
@@ -317,6 +350,14 @@ class OpenClawStack(Stack):
                 "MATRIX_BOT_TOKEN_SECRET": MATRIX_BOT_TOKEN_SECRET,
                 "MATRIX_BOT_CONTROL_ROOM_PARAM": MATRIX_BOT_CONTROL_ROOM_PARAM,
                 "OPENCLAW_STATE_FILE": str(OPENCLAW_STATE_FILE),
+                "AS_INSTALL_DIR": str(AS_INSTALL_DIR),
+                "AS_ASSET_S3_URI": f"s3://{as_asset.s3_bucket_name}/{as_asset.s3_object_key}",
+                "AS_PORT": str(AS_PORT),
+                "AS_PUBLIC_URL": f"https://{imports.appservice_fqdn}",
+                "HOMESERVER_NAME": imports.matrix_server_name,
+                "AGENT_IDS": ",".join(imports.agent_ids),
+                "APPSERVICE_AS_TOKEN_SECRET_ID": APPSERVICE_AS_TOKEN_SECRET,
+                "APPSERVICE_HS_TOKEN_SECRET_ID": APPSERVICE_HS_TOKEN_SECRET,
             },
         )
         user_data = ec2.UserData.custom(rendered)
@@ -355,6 +396,41 @@ class OpenClawStack(Stack):
         backup_plan.backup_plan.add_selection(
             "EfsSelection",
             resources=[backup.BackupResource.from_efs_file_system(filesystem)],
+        )
+
+        ###
+        # Matrix appservice public ALB. Synapse (Fargate, foundation
+        # VPC) pushes events to this URL; the AS server runs on the
+        # EC2 above. Public-facing because the two VPCs aren't
+        # peered, but Synapse's `hs_token` bearer guards the only
+        # behavior we expose.
+        appservice_alb = PublicHttpAlb(
+            self,
+            "AppserviceAlb",
+            fqdn=imports.appservice_fqdn,
+            a_record=imports.appservice_fqdn.split(".", 1)[0],
+            zone=foundation.public_zone,
+            vpc=vpc,
+        )
+        instance_sg.add_ingress_rule(
+            appservice_alb.security_group,
+            ec2.Port.tcp(AS_PORT),
+            "AS ALB to AS server",
+        )
+        appservice_alb.https_listener.add_targets(
+            "AppserviceTarget",
+            port=AS_PORT,
+            protocol=elbv2.ApplicationProtocol.HTTP,
+            targets=[elbv2_targets.InstanceTarget(instance, AS_PORT)],
+            deregistration_delay=Duration.seconds(15),
+            # matrix-bot-sdk's Appservice has no default route; an
+            # unauthenticated GET / yields 404. Accept that as
+            # healthy for the ALB target check (200 once the AS
+            # actually exposes a non-404 path is also fine).
+            health_check=elbv2.HealthCheck(
+                path="/",
+                healthy_http_codes="200,401,403,404",
+            ),
         )
 
         CfnOutput(self, "InstanceId", value=instance.instance_id)

@@ -1,0 +1,35 @@
+#!/bin/bash
+#
+# systemd ExecStartPre helper for openclaw-matrix-appservice.service.
+# Stages three runtime files under $RUNTIME_DIRECTORY:
+#   as-token       - APPSERVICE_AS_TOKEN_SECRET_ID  (Secrets Manager)
+#   hs-token       - APPSERVICE_HS_TOKEN_SECRET_ID  (Secrets Manager)
+#   gateway-token  - extracted from $OPENCLAW_STATE_FILE
+#                    (openclaw stores its loopback gateway token in
+#                    openclaw.json rather than a standalone file).
+
+set -euo pipefail
+
+: "${RUNTIME_DIRECTORY:?RUNTIME_DIRECTORY must be set by systemd}"
+: "${APPSERVICE_AS_TOKEN_SECRET_ID:?APPSERVICE_AS_TOKEN_SECRET_ID must be set in the unit}"
+: "${APPSERVICE_HS_TOKEN_SECRET_ID:?APPSERVICE_HS_TOKEN_SECRET_ID must be set in the unit}"
+: "${OPENCLAW_STATE_FILE:?OPENCLAW_STATE_FILE must be set in the unit}"
+
+aws secretsmanager get-secret-value \
+  --secret-id "$APPSERVICE_AS_TOKEN_SECRET_ID" \
+  --query SecretString --output text |
+  python3 -c 'import json,sys;print(json.load(sys.stdin)["secret"])' \
+    >"$RUNTIME_DIRECTORY/as-token"
+chmod 0600 "$RUNTIME_DIRECTORY/as-token"
+
+aws secretsmanager get-secret-value \
+  --secret-id "$APPSERVICE_HS_TOKEN_SECRET_ID" \
+  --query SecretString --output text |
+  python3 -c 'import json,sys;print(json.load(sys.stdin)["secret"])' \
+    >"$RUNTIME_DIRECTORY/hs-token"
+chmod 0600 "$RUNTIME_DIRECTORY/hs-token"
+
+python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["gateway"]["auth"]["token"])' \
+  "$OPENCLAW_STATE_FILE" \
+  >"$RUNTIME_DIRECTORY/gateway-token"
+chmod 0600 "$RUNTIME_DIRECTORY/gateway-token"

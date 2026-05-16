@@ -309,7 +309,10 @@ def build_app(
             foundation=foundation,
             assets=assets,
             matrix_homeserver_url=f"https://{matrix_fqdn}",
+            matrix_server_name=cfg.foundation.public_domain,
             allowed_sender=f"@{cfg.authentik.user.username}:{cfg.foundation.public_domain}",
+            appservice_fqdn=openclaw_appservice_fqdn,
+            agent_ids=["wadsworth", "sebastian", "binx"],
         ),
         env=env,
     )

@@ -93,7 +93,7 @@ chmod +x '@@MATRIX_BOT_INSTALL_DIR@@/scripts/prestart'
 # run build` -- pnpm run does an extra dep-status round-trip that
 # crashes against the readonly node_modules layout pnpm leaves on
 # disk in some configurations.
-sudo -iu ubuntu bash -c "cd '@@MATRIX_BOT_INSTALL_DIR@@' && ~/.local/share/pnpm/pnpm install --frozen-lockfile --ignore-scripts && (cd node_modules/@matrix-org/matrix-sdk-crypto-nodejs && node download-lib.js) && ./node_modules/.bin/tsc"
+sudo -iu ubuntu CI=true bash -c "cd '@@MATRIX_BOT_INSTALL_DIR@@' && ~/.local/share/pnpm/pnpm install --frozen-lockfile --ignore-scripts && (cd node_modules/@matrix-org/matrix-sdk-crypto-nodejs && node download-lib.js) && ./node_modules/.bin/tsc"
 
 # Drop a systemd user unit that runs the bot as ubuntu.
 install -d -m 0755 /home/ubuntu/.config/systemd/user
@@ -132,4 +132,52 @@ chmod 0644 /home/ubuntu/.config/systemd/user/openclaw-matrix-bot.service
 # control-room SSM param exists) is expected; `restart` after
 # populating the param is the manual recovery.
 sudo -iu ubuntu XDG_RUNTIME_DIR="/run/user/$(id -u ubuntu)" systemctl --user daemon-reload
-sudo -iu ubuntu XDG_RUNTIME_DIR="/run/user/$(id -u ubuntu)" systemctl --user enable openclaw-matrix-bot.service
+sudo -iu ubuntu XDG_RUNTIME_DIR="/run/user/$(id -u ubuntu)" systemctl --user enable --now openclaw-matrix-bot.service
+
+# Matrix Application Service install. Same package-build dance as
+# the bot above; uses its own asset bundle. systemd user unit runs
+# alongside the bot during Phase B so the existing @openclaw-bot
+# stays usable while we evaluate the AS approach.
+mkdir -p '@@AS_INSTALL_DIR@@'
+aws s3 cp '@@AS_ASSET_S3_URI@@' /tmp/openclaw_appservice.zip
+unzip -oq /tmp/openclaw_appservice.zip -d '@@AS_INSTALL_DIR@@'
+chown -R ubuntu:ubuntu '@@AS_INSTALL_DIR@@'
+chmod +x '@@AS_INSTALL_DIR@@/scripts/prestart'
+sudo -iu ubuntu CI=true bash -c "cd '@@AS_INSTALL_DIR@@' && ~/.local/share/pnpm/pnpm install --frozen-lockfile --ignore-scripts && (cd node_modules/@matrix-org/matrix-sdk-crypto-nodejs && node download-lib.js) && ./node_modules/.bin/tsc"
+
+cat >/home/ubuntu/.config/systemd/user/openclaw-matrix-appservice.service <<EOF
+[Unit]
+Description=OpenClaw Matrix Application Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@@AS_INSTALL_DIR@@
+RuntimeDirectory=openclaw-matrix-appservice
+RuntimeDirectoryMode=0700
+Environment=HOMESERVER_URL=@@HOMESERVER_URL@@
+Environment=HOMESERVER_NAME=@@HOMESERVER_NAME@@
+Environment=ALLOWED_SENDER=@@ALLOWED_SENDER@@
+Environment=AGENT_IDS=@@AGENT_IDS@@
+Environment=AS_PORT=@@AS_PORT@@
+Environment=AS_PUBLIC_URL=@@AS_PUBLIC_URL@@
+Environment=APPSERVICE_AS_TOKEN_SECRET_ID=@@APPSERVICE_AS_TOKEN_SECRET_ID@@
+Environment=APPSERVICE_HS_TOKEN_SECRET_ID=@@APPSERVICE_HS_TOKEN_SECRET_ID@@
+Environment=APPSERVICE_AS_TOKEN_FILE=%t/openclaw-matrix-appservice/as-token
+Environment=APPSERVICE_HS_TOKEN_FILE=%t/openclaw-matrix-appservice/hs-token
+Environment=OPENCLAW_GATEWAY_TOKEN_FILE=%t/openclaw-matrix-appservice/gateway-token
+Environment=OPENCLAW_STATE_FILE=@@OPENCLAW_STATE_FILE@@
+ExecStartPre=@@AS_INSTALL_DIR@@/scripts/prestart
+ExecStart=/usr/bin/node @@AS_INSTALL_DIR@@/dist/index.js
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=default.target
+EOF
+chown ubuntu:ubuntu /home/ubuntu/.config/systemd/user/openclaw-matrix-appservice.service
+chmod 0644 /home/ubuntu/.config/systemd/user/openclaw-matrix-appservice.service
+
+sudo -iu ubuntu XDG_RUNTIME_DIR="/run/user/$(id -u ubuntu)" systemctl --user daemon-reload
+sudo -iu ubuntu XDG_RUNTIME_DIR="/run/user/$(id -u ubuntu)" systemctl --user enable --now openclaw-matrix-appservice.service
