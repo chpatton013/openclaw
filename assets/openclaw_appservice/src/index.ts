@@ -89,23 +89,92 @@ function ghostMxidToAgentId(mxid: string, cfg: Config): string | null {
 }
 
 // Find which ghost user (and therefore which agent) is in the
-// given room. Used to route inbound messages to the right agent.
-// If multiple ghosts are present we pick the first lexicographically
-// for determinism, though that case isn't expected in v1.
+// given room. The AS bot user (`@openclaw`) isn't joined to any
+// agent rooms, so we can't query membership through it -- query
+// each ghost's joined-rooms list instead. Ghosts that haven't
+// been registered yet 401 silently; we skip those.
 async function ghostInRoom(
   appservice: Appservice,
   roomId: string,
   cfg: Config,
 ): Promise<string | null> {
-  const senderClient = appservice.botIntent.underlyingClient;
-  const members = await senderClient.getRoomMembers(roomId, undefined, [
-    "join",
-  ]);
-  const ghosts = members
-    .map((m: { membershipFor: string }) => m.membershipFor)
-    .filter((m: string) => ghostMxidToAgentId(m, cfg) !== null)
-    .sort();
-  return ghosts[0] ?? null;
+  for (const agentId of cfg.agentIds) {
+    const mxid = `@${cfg.ghostPrefix}${agentId}:${cfg.homeserverName}`;
+    const intent = appservice.getIntentForUserId(mxid);
+    try {
+      const rooms = await intent.underlyingClient.getJoinedRooms();
+      if (rooms.includes(roomId)) return agentId;
+    } catch (e) {
+      LogService.debug(
+        "openclaw-as",
+        `ghostInRoom: ${agentId} probe failed (likely not registered yet): ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+  }
+  return null;
+}
+
+async function handleRoomEvent(
+  appservice: Appservice,
+  cfg: Config,
+  roomId: string,
+  event: { type?: string; sender?: string; content?: Record<string, unknown> },
+): Promise<void> {
+  if (event.type !== "m.room.message") return;
+  if (event.sender === undefined) return;
+  if (event.sender === appservice.botUserId) return;
+  if (ghostMxidToAgentId(event.sender, cfg) !== null) return; // skip our own ghosts
+  if (event.sender !== cfg.allowedSender) {
+    LogService.warn(
+      "openclaw-as",
+      `ignoring message from non-allowed sender ${event.sender} in ${roomId}`,
+    );
+    return;
+  }
+  const content = event.content;
+  if (!content) return;
+  const body = content.body;
+  if (typeof body !== "string" || body.trim().length === 0) return;
+  if (content.msgtype !== "m.text") return;
+
+  const agentId = await ghostInRoom(appservice, roomId, cfg);
+  if (agentId === null) {
+    LogService.warn(
+      "openclaw-as",
+      `no openclaw ghost present in ${roomId}; ignoring message`,
+    );
+    return;
+  }
+
+  const ghostMxid = `@${cfg.ghostPrefix}${agentId}:${cfg.homeserverName}`;
+  const intent = appservice.getIntentForUserId(ghostMxid);
+  try {
+    const reply = await forwardToGateway({
+      agentId,
+      prompt: body,
+      timeoutSeconds: cfg.agentTimeoutSeconds,
+      gatewayToken: cfg.gatewayToken,
+    });
+    await intent.underlyingClient.sendText(roomId, reply);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    LogService.error("openclaw-as", `agent ${agentId} dispatch failed: ${msg}`);
+    // Best-effort: surface the failure inline so the operator
+    // sees something in the room. If the sendText itself throws
+    // (e.g. ghost can't speak), the outer catch logs it.
+    try {
+      await intent.underlyingClient.sendText(roomId, `error: ${msg}`);
+    } catch (e2) {
+      LogService.error(
+        "openclaw-as",
+        `failed to send error message to ${roomId}: ${
+          e2 instanceof Error ? e2.message : String(e2)
+        }`,
+      );
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -193,54 +262,19 @@ async function main(): Promise<void> {
     await appservice.getIntentForUserId(stateKey).joinRoom(roomId);
   });
 
-  appservice.on("room.event", async (roomId, event) => {
-    if (event.type !== "m.room.message") return;
-    if (event.sender === undefined) return;
-    if (event.sender === appservice.botUserId) return;
-    if (ghostMxidToAgentId(event.sender, cfg) !== null) {
-      // Don't loop on our own ghosts' messages.
-      return;
-    }
-    if (event.sender !== cfg.allowedSender) {
-      LogService.warn(
-        "openclaw-as",
-        `ignoring message from non-allowed sender ${event.sender} in ${roomId}`,
-      );
-      return;
-    }
-    const content = event.content as Record<string, unknown> | undefined;
-    if (!content) return;
-    const body = content.body;
-    if (typeof body !== "string" || body.trim().length === 0) return;
-    if (content.msgtype !== "m.text") return;
-
-    const agentId = await ghostInRoom(appservice, roomId, cfg);
-    if (agentId === null) {
-      LogService.warn(
-        "openclaw-as",
-        `no openclaw ghost present in ${roomId}; ignoring message`,
-      );
-      return;
-    }
-
-    const ghostMxid = `@${cfg.ghostPrefix}${agentId}:${cfg.homeserverName}`;
-    const intent = appservice.getIntentForUserId(ghostMxid);
-    try {
-      const reply = await forwardToGateway({
-        agentId,
-        prompt: body,
-        timeoutSeconds: cfg.agentTimeoutSeconds,
-        gatewayToken: cfg.gatewayToken,
-      });
-      await intent.underlyingClient.sendText(roomId, reply);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+  appservice.on("room.event", (roomId, event) => {
+    // matrix-bot-sdk's emitter doesn't catch promise rejections
+    // from listeners; an unhandled throw here crashes the whole
+    // Node process. Detach into an async closure and swallow
+    // anything that escapes the inner handler.
+    void handleRoomEvent(appservice, cfg, roomId, event).catch((e) => {
       LogService.error(
         "openclaw-as",
-        `agent ${agentId} dispatch failed: ${msg}`,
+        `unhandled error in room.event handler for ${roomId}: ${
+          e instanceof Error ? (e.stack ?? e.message) : String(e)
+        }`,
       );
-      await intent.underlyingClient.sendText(roomId, `error: ${msg}`);
-    }
+    });
   });
 
   await appservice.begin();
