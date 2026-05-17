@@ -12,8 +12,9 @@ if [ ! -f "${SIGNING_KEY}" ]; then
 fi
 
 # 2. One-time random secrets: macaroon (auth tokens), form (CSRF),
-#    registration_shared_secret (used by the bot bootstrap CR in a
-#    future phase to register the OpenClaw bot account).
+#    registration_shared_secret (lets an operator run
+#    `register_new_matrix_user` against this homeserver -- see
+#    bin/matrix-register-user for the helper that uses it).
 for f in macaroon_secret_key form_secret registration_shared_secret; do
   if [ ! -f "${DATA}/${f}" ]; then
     head -c 32 /dev/urandom | base64 | tr -d '\n=' >"${DATA}/${f}"
@@ -40,16 +41,4 @@ sys.stdout.write(os.path.expandvars(sys.stdin.read()))
 #    write the env-var content straight to disk.
 printf '%s' "${LOG_CONFIG_YAML}" >"${DATA}/log.config"
 
-# 5. Application-service registration for openclaw. Same shape as
-#    homeserver.yaml: env-var-borne template, expanded with
-#    python3 expandvars. APPSERVICE_AS_TOKEN / APPSERVICE_HS_TOKEN
-#    come in as ECS secrets so they don't appear in any task-def
-#    plaintext. homeserver.yaml.tmpl references this path via
-#    app_service_config_files.
-python3 -c '
-import os, sys
-sys.stdout.write(os.path.expandvars(sys.stdin.read()))
-' <<<"${APPSERVICE_OPENCLAW_TMPL}" >"${DATA}/appservice-openclaw.yaml"
-chmod 0600 "${DATA}/appservice-openclaw.yaml"
-
-echo "matrix-init: homeserver.yaml + appservice-openclaw.yaml rendered for ${SERVER_NAME}"
+echo "matrix-init: homeserver.yaml rendered for ${SERVER_NAME}"

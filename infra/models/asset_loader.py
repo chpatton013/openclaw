@@ -38,18 +38,6 @@ class AssetLoader:
             raise FileNotFoundError(f"site asset not found: {path}")
         return path
 
-    def openclaw_bot_path(self) -> pathlib.Path:
-        path = self._assets / "openclaw_bot"
-        if not path.is_dir():
-            raise FileNotFoundError(f"openclaw_bot asset not found: {path}")
-        return path
-
-    def openclaw_appservice_path(self) -> pathlib.Path:
-        path = self._assets / "openclaw_appservice"
-        if not path.is_dir():
-            raise FileNotFoundError(f"openclaw_appservice asset not found: {path}")
-        return path
-
     def element_web_cache_path(self) -> pathlib.Path:
         return self._assets / "element-web" / "cache"
 

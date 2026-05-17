@@ -1,23 +1,16 @@
 import pathlib
 from dataclasses import dataclass
 
-import aws_cdk as cdk
 from aws_cdk import (
-    Aws,
     CfnOutput,
-    Duration,
     Stack,
     aws_backup as backup,
     aws_ec2 as ec2,
     aws_efs as efs,
-    aws_elasticloadbalancingv2 as elbv2,
-    aws_elasticloadbalancingv2_targets as elbv2_targets,
     aws_iam as iam,
-    aws_s3_assets as s3_assets,
 )
 from constructs import Construct
 
-from ..constructs.public_http_alb import PublicHttpAlb
 from ..constructs.shared_efs_volume import EfsAccessPointSpec, SharedEfsVolume
 from ..constructs.standard_backup_plan import StandardBackupPlan
 from ..models.asset_loader import AssetLoader
@@ -28,18 +21,6 @@ from ..models.foundation_exports import FoundationExports
 class OpenClawImports:
     foundation: FoundationExports
     assets: AssetLoader
-    matrix_homeserver_url: str
-    # Synapse server_name (the apex domain, used for the AS user-
-    # namespace regex and ghost MXID construction).
-    matrix_server_name: str
-    allowed_sender: str
-    # Public FQDN of the AS endpoint; OpenClawStack provisions the
-    # ALB at this hostname. Synapse already has the URL baked into
-    # its registration YAML (Phase A) and pushes events here.
-    appservice_fqdn: str
-    # Comma-joined agent ids the AS puppets. The AS only responds
-    # for ghost MXIDs whose suffix matches one of these.
-    agent_ids: list[str]
 
 
 EFS_MOUNTPOINT_DIR = pathlib.Path("/data")
@@ -47,24 +28,6 @@ OPENCLAW_ROOT_DIR = EFS_MOUNTPOINT_DIR / "openclaw"
 OPENCLAW_HOME_DIR = OPENCLAW_ROOT_DIR / "home"
 OPENCLAW_STATE_DIR = OPENCLAW_ROOT_DIR / "state"
 OPENCLAW_WORKSPACES_DIR = OPENCLAW_ROOT_DIR / "workspaces"
-MATRIX_BOT_DIR = EFS_MOUNTPOINT_DIR / "matrix-bot"
-MATRIX_BOT_INSTALL_DIR = pathlib.Path("/opt/openclaw-matrix-bot")
-MATRIX_BOT_RUNTIME_DIR = pathlib.Path("/run/openclaw-matrix-bot")
-MATRIX_BOT_TOKEN_SECRET = "matrix/openclaw-bot-token"
-MATRIX_BOT_CONTROL_ROOM_PARAM = "/openclaw-matrix-bot/control-room-id"
-
-# Matrix appservice (Phase B). Runs alongside the existing
-# matrix-bot during the evaluation period. Secret names are the
-# ones MatrixStack auto-generates in Phase A.
-AS_INSTALL_DIR = pathlib.Path("/opt/openclaw-matrix-appservice")
-AS_PORT = 9000
-APPSERVICE_AS_TOKEN_SECRET = "matrix/openclaw-appservice-as-token"
-APPSERVICE_HS_TOKEN_SECRET = "matrix/openclaw-appservice-hs-token"
-# OpenClaw stores its gateway auth token inside its main state JSON
-# file at `gateway.auth.token` rather than as a standalone file.
-# The bot's prestart helper reads this state file and extracts the
-# token into a sibling runtime file the bot consumes.
-OPENCLAW_STATE_FILE = OPENCLAW_STATE_DIR / "openclaw.json"
 NODESOURCE_KEY_URI = "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
 NODESOURCE_REPO_URI = "https://deb.nodesource.com/node_24.x"
 NODESOURCE_KEY_PATH = pathlib.Path("/etc/apt/keyrings/nodesource.gpg")
@@ -145,11 +108,11 @@ class OpenClawStack(Stack):
         # OpenClaw's VPC is single-tier public (no NAT, no isolated
         # subnets), so override the construct's PRIVATE_WITH_EGRESS
         # default. RETAIN: this EFS holds openclaw agent state
-        # (sessions, memory, auth-profiles, workspaces) plus the
-        # matrix bot's cross-signing keys. We do NOT want a
-        # `cdk destroy OpenClawStack` to nuke that material -- instance
-        # replacement leaves the EFS in place regardless of policy, but
-        # a manual stack destroy without RETAIN would.
+        # (sessions, memory, auth-profiles, workspaces, matrix
+        # crypto stores). We do NOT want a `cdk destroy OpenClawStack`
+        # to nuke that material -- instance replacement leaves the EFS
+        # in place regardless of policy, but a manual stack destroy
+        # without RETAIN would.
         efs_volume = SharedEfsVolume(
             self,
             "OpenClawEfs",
@@ -201,107 +164,6 @@ class OpenClawStack(Stack):
             )
         )
 
-        # Matrix bot resources the EC2 instance pulls at runtime: the
-        # bot's access token from Secrets Manager and the control
-        # room ID from SSM Parameter Store. The control-room
-        # parameter is created manually post-deploy after I invite
-        # the bot to a fresh DM room.
-        role.add_to_principal_policy(
-            iam.PolicyStatement(
-                actions=["secretsmanager:GetSecretValue"],
-                resources=[
-                    f"arn:aws:secretsmanager:{Aws.REGION}:{Aws.ACCOUNT_ID}:secret:{MATRIX_BOT_TOKEN_SECRET}-*",
-                    f"arn:aws:secretsmanager:{Aws.REGION}:{Aws.ACCOUNT_ID}:secret:{APPSERVICE_AS_TOKEN_SECRET}-*",
-                    f"arn:aws:secretsmanager:{Aws.REGION}:{Aws.ACCOUNT_ID}:secret:{APPSERVICE_HS_TOKEN_SECRET}-*",
-                ],
-            )
-        )
-        role.add_to_principal_policy(
-            iam.PolicyStatement(
-                actions=["ssm:GetParameter", "ssm:PutParameter"],
-                resources=[
-                    f"arn:aws:ssm:{Aws.REGION}:{Aws.ACCOUNT_ID}:parameter{MATRIX_BOT_CONTROL_ROOM_PARAM}"
-                ],
-            )
-        )
-
-        # Upload the bot source as an S3 asset; user-data fetches and
-        # installs it locally on the instance. node_modules + dist
-        # are .gitignore'd and rebuilt on the host so the deploy
-        # bundle stays small.
-        # AGENT TODO: I wanted to start small with the scope of the bot for the
-        # sake of getting things working, but now I want to share the bigger
-        # picture of how I want this to work.
-        # - First, focusing on the setup of the human users. Most of this
-        # deployment has been built to automatically set up my own user account,
-        # but I also want to add a user account for my partner. I don't think I
-        # need to include her account in the authentik blueprints, since I plan
-        # on making it for her in authentik by hand. Trying to automate that
-        # would complicate the setup we have now with env-var injection; as long
-        # as her account isn't lost during redeploys then I'm fine with setting
-        # it up manually this one time.
-        # - Second, onto agents. I want to have multiple openclaw agents, each
-        # tailored for a specific purpose, and I want to use different matrix
-        # rooms to talk to them. I want each of those agents to appear as their
-        # own matrix username, with separate identities I can address in
-        # messages. For the sake of giving practical examples, let's assign some
-        # names. My name is Chris, my partner's name is Chelsea, and I have
-        # three different AI agents in mind: Wadsworth, Sebastian, and Binx.
-        # Each of these three agents are assistants to help keep our daily lives
-        # humming along smoothly, but they have different roles.
-        #   - Sebastian is my personal assistant, whom I can share sensitive
-        #   information with (like planning a surprise for my partner without
-        #   worrying about her finding out), assign all sorts of tasks to (like
-        #   clean up my email inbox), etc.
-        #   - Binx plays that same role for my partner.
-        #   - Wadsworth is a shared assistant that both myself and my partner
-        #   can talk to and assign tasks to that we don't mind the other
-        #   learning about. For example, "plan a game night with the neighbors
-        #   that works with our schedules".
-        # The rationale behind splitting these roles across agents is to
-        # partition information, personas, memory, etc so there's no chance of
-        # cross-contamination. My partner and I can build Wadsworth together,
-        # but we each retain our own private assistants.
-        # I'm worried about the security implications of exposing the control ui
-        # for openclaw on the internet (and I won't have much luck getting my
-        # partner to connect to tailscale to access it), so I want to use Matrix
-        # as the "safe" way to direct these agents (since E2EE in matrix rooms
-        # gives me confidence that an external attacker hasn't hacked my matrix
-        # server either).
-        # I'd like to be able to use matrix rooms in the same way that ai chat
-        # interfaces uses separate chats. The agent still has all the project
-        # context (the other chats) for reference, but the primary context comes
-        # from the chat history in that room specifically. Those rooms can have
-        # multiple humans and/or multiple agents in them. For example, I may
-        # make a room where I invite both Wadsworth and Sebastian so Sebastian
-        # can distill and transfer some bit of relevant information to
-        # Wadsworth. Or both Chelsea and I may join a room with Wadsworth where
-        # we plan an event.
-        # Eventually I'll make many more agents for different purposes, and I'll
-        # want to make rooms mixing and matching many of them together. I don't
-        # know the full set of agents and rooms I'll want, so I don't think that
-        # information belongs encoded in this repo's IAC. Instead, I want the
-        # code here to set up the building blocks that can enable this use
-        # pattern. Let's brainstorm about what we would need to do to set that
-        # up.
-        # IgnoreMode.GIT picks up each asset folder's own .gitignore
-        # so locally-built node_modules / dist don't bloat the upload
-        # and don't ship a stale state pnpm will refuse to overwrite
-        # on the EC2 host without a TTY.
-        bot_asset = s3_assets.Asset(
-            self,
-            "MatrixBotAsset",
-            path=str(imports.assets.openclaw_bot_path()),
-            ignore_mode=cdk.IgnoreMode.GIT,
-        )
-        bot_asset.grant_read(role)
-        as_asset = s3_assets.Asset(
-            self,
-            "MatrixAppserviceAsset",
-            path=str(imports.assets.openclaw_appservice_path()),
-            ignore_mode=cdk.IgnoreMode.GIT,
-        )
-        as_asset.grant_read(role)
         efs_fstab = " ".join(
             [
                 f"{filesystem.file_system_id}:/",
@@ -342,22 +204,6 @@ class OpenClawStack(Stack):
                 "HOMEBREW_INSTALLER_URI": HOMEBREW_INSTALLER_URI,
                 "PNPM_INSTALLER_URI": PNPM_INSTALLER_URI,
                 "PNPM_VERSION": PNPM_VERSION,
-                "MATRIX_BOT_INSTALL_DIR": str(MATRIX_BOT_INSTALL_DIR),
-                "MATRIX_BOT_DIR": str(MATRIX_BOT_DIR),
-                "BOT_ASSET_S3_URI": f"s3://{bot_asset.s3_bucket_name}/{bot_asset.s3_object_key}",
-                "HOMESERVER_URL": imports.matrix_homeserver_url,
-                "ALLOWED_SENDER": imports.allowed_sender,
-                "MATRIX_BOT_TOKEN_SECRET": MATRIX_BOT_TOKEN_SECRET,
-                "MATRIX_BOT_CONTROL_ROOM_PARAM": MATRIX_BOT_CONTROL_ROOM_PARAM,
-                "OPENCLAW_STATE_FILE": str(OPENCLAW_STATE_FILE),
-                "AS_INSTALL_DIR": str(AS_INSTALL_DIR),
-                "AS_ASSET_S3_URI": f"s3://{as_asset.s3_bucket_name}/{as_asset.s3_object_key}",
-                "AS_PORT": str(AS_PORT),
-                "AS_PUBLIC_URL": f"https://{imports.appservice_fqdn}",
-                "HOMESERVER_NAME": imports.matrix_server_name,
-                "AGENT_IDS": ",".join(imports.agent_ids),
-                "APPSERVICE_AS_TOKEN_SECRET_ID": APPSERVICE_AS_TOKEN_SECRET,
-                "APPSERVICE_HS_TOKEN_SECRET_ID": APPSERVICE_HS_TOKEN_SECRET,
             },
         )
         user_data = ec2.UserData.custom(rendered)
@@ -396,41 +242,6 @@ class OpenClawStack(Stack):
         backup_plan.backup_plan.add_selection(
             "EfsSelection",
             resources=[backup.BackupResource.from_efs_file_system(filesystem)],
-        )
-
-        ###
-        # Matrix appservice public ALB. Synapse (Fargate, foundation
-        # VPC) pushes events to this URL; the AS server runs on the
-        # EC2 above. Public-facing because the two VPCs aren't
-        # peered, but Synapse's `hs_token` bearer guards the only
-        # behavior we expose.
-        appservice_alb = PublicHttpAlb(
-            self,
-            "AppserviceAlb",
-            fqdn=imports.appservice_fqdn,
-            a_record=imports.appservice_fqdn.split(".", 1)[0],
-            zone=foundation.public_zone,
-            vpc=vpc,
-        )
-        instance_sg.add_ingress_rule(
-            appservice_alb.security_group,
-            ec2.Port.tcp(AS_PORT),
-            "AS ALB to AS server",
-        )
-        appservice_alb.https_listener.add_targets(
-            "AppserviceTarget",
-            port=AS_PORT,
-            protocol=elbv2.ApplicationProtocol.HTTP,
-            targets=[elbv2_targets.InstanceTarget(instance, AS_PORT)],
-            deregistration_delay=Duration.seconds(15),
-            # matrix-bot-sdk's Appservice has no default route; an
-            # unauthenticated GET / yields 404. Accept that as
-            # healthy for the ALB target check (200 once the AS
-            # actually exposes a non-404 path is also fine).
-            health_check=elbv2.HealthCheck(
-                path="/",
-                healthy_http_codes="200,401,403,404",
-            ),
         )
 
         CfnOutput(self, "InstanceId", value=instance.instance_id)

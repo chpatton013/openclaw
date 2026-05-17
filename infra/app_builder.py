@@ -61,11 +61,6 @@ def build_app(
     # Element-Web embeds the Element-Call widget by URL; no
     # trailing slash inside the widget code's URL composition.
     element_call_url = element_call_base_url.rstrip("/")
-    # openclaw appservice endpoint. OpenClawStack will stand the
-    # ALB up in Phase B of the AS work; MatrixStack bakes this URL
-    # into the AS registration YAML in Phase A.
-    openclaw_appservice_fqdn = f"openclaw-as.{cfg.foundation.public_domain}"
-    openclaw_appservice_url = f"https://{openclaw_appservice_fqdn}"
 
     # CloudFront / ACM-for-CloudFront only live in us-east-1, so
     # ApexEdgeStack is pinned there. Everything else stays in the
@@ -209,7 +204,6 @@ def build_app(
             turn_shared_secret=turn.turn_shared_secret,
             turn_uris=turn.turn_uris,
             turn_user_lifetime_seconds=cfg.turn.turn_user_lifetime_seconds,
-            openclaw_appservice_url=openclaw_appservice_url,
         ),
         env=env,
     )
@@ -308,11 +302,6 @@ def build_app(
         imports=OpenClawImports(
             foundation=foundation,
             assets=assets,
-            matrix_homeserver_url=f"https://{matrix_fqdn}",
-            matrix_server_name=cfg.foundation.public_domain,
-            allowed_sender=f"@{cfg.authentik.user.username}:{cfg.foundation.public_domain}",
-            appservice_fqdn=openclaw_appservice_fqdn,
-            agent_ids=["wadsworth", "sebastian", "binx"],
         ),
         env=env,
     )

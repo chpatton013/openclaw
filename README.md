@@ -138,46 +138,19 @@ manual step is the Tailscale SaaS-side registration.
       `https://matrix.<public_domain>` in a Matrix client (Element web
       works); start the SSO flow; sign in via Authentik. Your MXID
       becomes `@<authentik.user.username>:<public_domain>`.
-- Matrix → OpenClaw control bot (`OpenClawStack`)
-    - The bot account (`@openclaw-bot:<public_domain>`; tracked by
-      the bootstrap CR's `BOT_USERNAME` constant in
-      `infra/stacks/matrix_stack.py`) is registered automatically
-      by a Custom Resource in MatrixStack and its access token
-      written to Secrets Manager at `matrix/openclaw-bot-token`. On
-      its first start, when the
-      `/openclaw-matrix-bot/control-room-id` SSM parameter is unset,
-      the bot creates an encrypted DM, invites
-      `@<authentik.user.username>:<public_domain>`, and persists
-      the new room ID back to SSM. Subsequent restarts pick up the
-      same room from SSM.
-    - In Element, accept the invite from the bot.
-    - **Verify the bot** so Element shows it as a fully trusted
-      user. matrix-bot-sdk's bundled rust-crypto adapter doesn't
-      implement the SAS dance, so Element's interactive "Verify
-      user" hangs against the bot. Instead, run the side-channel
-      CLI once:
+- OpenClaw agent accounts (`OpenClawStack`)
+    - The openclaw daemon ships a first-class Matrix channel with
+      multi-account support + native E2EE. Onboard one bot account
+      per agent: SSM into the EC2 instance, run `openclaw doctor`
+      and follow the wizard's `channels.matrix.accounts` flow.
+    - For each agent, mint a Matrix user + access token with the
+      helper:
       ```sh
-      bin/matrix-bot-verify '@openclaw-bot:<public_domain>'
+      bin/matrix-register-user openclaw-<agent>
       ```
-      It prompts for your Element access token (Settings > Help &
-      About > Advanced > "Access Token") and your Element recovery
-      key (the base58 string Element gave you when you set up
-      Secure Backup). It decrypts your `user_signing_private_key`
-      out of Synapse's 4S secret storage, signs the bot's master
-      cross-signing key with it, and posts the signature back. After
-      reloading Element, the bot shows as a fully verified user.
-    - Test by sending a message in the control room. The bot
-      forwards the body to the OpenClaw loopback gateway and replies
-      in-thread. If you see `gateway HTTP 4xx/5xx` replies, the
-      gateway HTTP shape in
-      [`assets/openclaw_bot/src/openclaw.ts`](./assets/openclaw_bot/src/openclaw.ts)
-      may need adjusting for your `openclaw` version's API.
-    - To rebind the bot to a different room (e.g. you abandoned the
-      first one), run
-      `bin/matrix-bot-bind-room '!xxx:<public_domain>'` with the new
-      room's Internal ID (Element: room Settings → Advanced →
-      "Internal room ID"). The bot needs to be already invited to
-      that room from your account.
+      Paste the resulting token into the wizard prompt; tokens
+      live in `~/.openclaw/openclaw.json` on the EFS-backed state
+      dir so they persist across instance replacements.
 
 ## Operations
 
@@ -592,15 +565,10 @@ DAG. But they can never declare a cyclical dependency.
           DB password + Authentik OIDC client secret, plus a signing
           key + macaroon/form/registration secrets that are generated
           on first boot and persisted to EFS. Script lives at
-          `assets/matrix/init.sh`
-        - Custom resource: a one-shot Fargate task registers an
-          `@openclaw-bot:<public_domain>` user via Synapse's
-          shared-secret-nonce admin API, logs in to mint an access
-          token, and writes the token + user_id + device_id to
-          `matrix/openclaw-bot-token` Secrets Manager. The CR's
-          trigger property is a content-derived hash so any change to
-          the bootstrap script or the Lambda code naturally re-fires
-          the registration. Script lives at `assets/matrix/bootstrap.sh`
+          `assets/matrix/init.sh`. The
+          `registration_shared_secret` it writes is what
+          `bin/matrix-register-user` uses to mint agent accounts
+          on demand.
         - OIDC SSO via Authentik (one OIDC provider blueprint
           provisions Matrix as an Authentik application; users sign
           into Element via the apex Authentik flow)
@@ -671,45 +639,36 @@ DAG. But they can never declare a cyclical dependency.
       documented under [Post-Deploy Setup](#post-deploy-setup) → "Mail
       server" (SES production-access ticket; PTR records).
 - [OpenClaw Stack](./infra/stacks/openclaw_stack.py)
-    - Personal-assistant agent platform + the Matrix bot that talks
-      to it over E2EE rooms.
+    - Personal-assistant agent platform. Matrix integration is
+      done by openclaw's own daemon (channels.matrix), not a
+      separate process.
     - Resources:
         - Service: single EC2 instance running the openclaw daemon
           (gateway listening on a WebSocket-RPC loopback, agents
-          spawning subprocesses as needed) and the openclaw-matrix-bot
-          systemd user unit alongside it
-        - Storage: encrypted EFS mounted at `/data`, holding both
+          spawning subprocesses as needed). The daemon's matrix
+          channel handles login, sync, crypto, and dispatch for
+          every configured agent account.
+        - Storage: encrypted EFS mounted at `/data`, holding all
           openclaw agent state (sessions, memory, workspaces,
-          auth-profiles) and the matrix bot's `cross-signing.json`.
-          `RemovalPolicy.RETAIN` so stack destroys don't nuke any of
-          that. Backup plan writes daily/weekly/monthly into the
+          auth-profiles, per-account matrix crypto stores).
+          `RemovalPolicy.RETAIN` so stack destroys don't nuke any
+          of that. Backup plan writes daily/weekly/monthly into the
           shared BackupVault.
         - Network: dedicated single-subnet public VPC (not the
           foundation VPC). No inbound rules on the instance SG; SSM
           Session Manager is the only operator access path.
         - User-data: bootstrap script lives at
           `assets/openclaw/user-data.sh.tmpl`; CDK substitutes
-          paths + asset URIs + EFS id and hands the rendered string
-          to `ec2.UserData.custom()`
-        - Matrix bot: source under `assets/openclaw_bot/` is shipped
-          as an S3 asset, downloaded + built (`pnpm install` pinned
-          to 10.18.3 + `tsc`) on each fresh instance. The bot reads
-          its access token from `matrix/openclaw-bot-token`, the
-          control-room id from `/openclaw-matrix-bot/control-room-id`
-          SSM parameter, and the openclaw gateway token from
-          `gateway-token` (extracted from the daemon's state JSON by
-          the prestart helper). Connects to Synapse as
-          `@openclaw-bot:<public_domain>` and proxies messages from
-          the allowlisted operator MXID to `openclaw agent --agent
-          main` subprocess invocations.
+          paths + EFS id and hands the rendered string to
+          `ec2.UserData.custom()`.
     - Notes:
         - This service is high-trust by virtue of running an LLM
           agent that can hit the openclaw `exec` tool, so it lives
           in its own VPC and the operator-access path is SSM-only.
-        - The matrix bot is provisioned by a one-shot Custom Resource
-          in MatrixStack, not here -- see Matrix Stack above. The
-          Lambda registers `@openclaw-bot` and writes its access
-          token to Secrets Manager; this stack just consumes those.
+        - Agent matrix accounts are created on demand via
+          `bin/matrix-register-user`, then registered in
+          openclaw's config via the `openclaw doctor` wizard.
+          See Post-Deploy Setup.
 - [Apex Edge Stack](./infra/stacks/apex_edge_stack.py)
     - Apex CloudFront distribution + S3 origin bucket + ACM cert +
       apex Route53 records. Pinned to `us-east-1` (CloudFront +
@@ -772,3 +731,7 @@ DAG. But they can never declare a cyclical dependency.
 - Planned homelab hosting:
     - ownCloud / NextCloud
     - Gitea or Forgejo
+
+TODO:
+- Monitoring stack
+- Auto-scale-down
